@@ -143,7 +143,47 @@ Result<Rect> parse_rect(const Value& v, const char* field) {
         return Rect{v["x"].as_double(), v["y"].as_double(), v["w"].as_double(), v["h"].as_double(),
                     space};
     }
-    return err(ErrorCode::InvalidArgument, std::string(field) + " must be [x,y,w,h] or an object");
+    if (v.is_string()) {
+        // "x,y,w,h" and "x,y,w,h@physical", matching the string form points
+        // accept. The CLI turns a bare --region 0,0,800,600 into a string, so
+        // without this the documented shorthand does not work there.
+        std::string s = v.as_string();
+        const auto at = s.find('@');
+        if (at != std::string::npos) {
+            auto sp = space_from_string(s.substr(at + 1));
+            if (!sp) {
+                return err(ErrorCode::InvalidArgument,
+                           std::string(field) + " has an unknown space suffix");
+            }
+            space = *sp;
+            s = s.substr(0, at);
+        }
+        double parts[4] = {0, 0, 0, 0};
+        std::size_t start = 0;
+        int found = 0;
+        for (; found < 4; ++found) {
+            const auto comma = s.find(',', start);
+            const std::string piece =
+                s.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            try {
+                parts[found] = std::stod(piece);
+            } catch (...) {
+                break;
+            }
+            if (comma == std::string::npos) {
+                ++found;
+                break;
+            }
+            start = comma + 1;
+        }
+        if (found != 4) {
+            return err(ErrorCode::InvalidArgument,
+                       std::string(field) + " string form must be \"x,y,w,h\"");
+        }
+        return Rect{parts[0], parts[1], parts[2], parts[3], space};
+    }
+    return err(ErrorCode::InvalidArgument,
+               std::string(field) + " must be [x,y,w,h], {x,y,w,h} or \"x,y,w,h\"");
 }
 
 namespace {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <string>
 
+#include "cc/types.hpp"
 #include "core/json.hpp"
 #include "core/text.hpp"
 #include "test_framework.hpp"
@@ -111,4 +112,72 @@ TEST(json_roundtrips_multibyte_text) {
     CHECK_EQ(again["jp"].as_string(), kJapanese);
     CHECK_EQ(again["emoji"].as_string(), kEmoji);
     CHECK_EQ(again["accent"].as_string(), kAccented);
+}
+
+// --- argument parsing -------------------------------------------------------
+// parse_rect's string form is documented in the README and used by the CLI,
+// which turns `--region 0,0,800,600` into a bare string. It silently did not
+// work.
+
+namespace cc::actions {
+Result<Rect> parse_rect(const json::Value& v, const char* field);
+Result<Point> parse_point(const json::Value& v, const char* field);
+}  // namespace cc::actions
+
+TEST(parse_rect_accepts_the_documented_string_form) {
+    auto r = cc::actions::parse_rect(json::Value("10,20,300,400"), "region");
+    CHECK(r.ok());
+    if (r) {
+        CHECK_NEAR(r.value().x, 10, 1e-9);
+        CHECK_NEAR(r.value().y, 20, 1e-9);
+        CHECK_NEAR(r.value().w, 300, 1e-9);
+        CHECK_NEAR(r.value().h, 400, 1e-9);
+        CHECK(r.value().space == Space::Logical);
+    }
+}
+
+TEST(parse_rect_honours_a_space_suffix) {
+    auto r = cc::actions::parse_rect(json::Value("0,0,640,480@physical"), "region");
+    CHECK(r.ok());
+    if (r) CHECK(r.value().space == Space::Physical);
+}
+
+TEST(parse_rect_still_accepts_arrays_and_objects) {
+    json::Value arr = json::Value::array();
+    for (double v : {1.0, 2.0, 3.0, 4.0}) arr.push_back(v);
+    auto a = cc::actions::parse_rect(arr, "region");
+    CHECK(a.ok());
+    if (a) CHECK_NEAR(a.value().w, 3, 1e-9);
+
+    json::Value obj = json::Value::object();
+    obj.set("x", 5);
+    obj.set("y", 6);
+    obj.set("w", 7);
+    obj.set("h", 8);
+    obj.set("space", "image");
+    auto o = cc::actions::parse_rect(obj, "region");
+    CHECK(o.ok());
+    if (o) {
+        CHECK_NEAR(o.value().h, 8, 1e-9);
+        CHECK(o.value().space == Space::Image);
+    }
+}
+
+TEST(parse_rect_rejects_malformed_input) {
+    CHECK(!cc::actions::parse_rect(json::Value("1,2,3"), "region").ok());
+    CHECK(!cc::actions::parse_rect(json::Value("a,b,c,d"), "region").ok());
+    CHECK(!cc::actions::parse_rect(json::Value("0,0,1,1@nonsense"), "region").ok());
+    CHECK(!cc::actions::parse_rect(json::Value(42), "region").ok());
+}
+
+TEST(parse_point_string_and_space_forms) {
+    auto p = cc::actions::parse_point(json::Value("100,200"), "at");
+    CHECK(p.ok());
+    if (p) CHECK_NEAR(p.value().x, 100, 1e-9);
+
+    auto i = cc::actions::parse_point(json::Value("50,60@image"), "at");
+    CHECK(i.ok());
+    if (i) CHECK(i.value().space == Space::Image);
+
+    CHECK(!cc::actions::parse_point(json::Value("nope"), "at").ok());
 }

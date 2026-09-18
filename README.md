@@ -283,10 +283,10 @@ Two ways to fix it:
 
   ```bash
   cmake --build build --target macos_bundle
-  open build/computer-control.app --args permissions --request
+  open -n build/computer-control.app --args permissions --request
   ```
 
-  A bundle launched through LaunchServices is its own responsible process, so it prompts properly and appears in the list under its own name.
+  A bundle launched through LaunchServices is its own responsible process, so it prompts properly and appears in the list as **computer-control**, where you can enable it. Running the binary inside the bundle directly from a shell does *not* do this — it is a child of the shell again, and `cc permissions` will say so.
 
 **Signing matters for persistence.** An ad-hoc signature is keyed to the code hash, so every rebuild is a new identity and the grant is lost. Pass a real certificate to keep it:
 
