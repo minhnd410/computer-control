@@ -5,6 +5,8 @@
 // Kept separate from actions.cpp only for size; it is the same dispatcher.
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 
 #include "capi/actions.hpp"
 

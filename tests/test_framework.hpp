@@ -27,6 +27,18 @@ inline int& failures() {
     return f;
 }
 
+inline int& skips() {
+    static int s = 0;
+    return s;
+}
+
+// Thrown by SKIP(). A few checks need a real display or a real device; on a
+// headless runner the honest outcome is "not run here", not a pass and not a
+// failure.
+struct Skipped {
+    std::string reason;
+};
+
 inline std::string& current() {
     static std::string c;
     return c;
@@ -54,6 +66,9 @@ inline int run_all() {
         std::printf("%s\n", c.name.c_str());
         try {
             c.fn();
+        } catch (const Skipped& s) {
+            ++skips();
+            std::printf("  SKIP %s\n", s.reason.c_str());
         } catch (const std::exception& e) {
             ++failures();
             std::printf("  FAIL threw: %s\n", e.what());
@@ -63,8 +78,9 @@ inline int run_all() {
         }
         if (failures() == before) ++passed;
     }
-    std::printf("\n%d/%zu cases passed, %d assertion failure(s)\n", passed, cases().size(),
-                failures());
+    std::printf("\n%d/%zu cases passed", passed, cases().size());
+    if (skips()) std::printf(" (%d skipped)", skips());
+    std::printf(", %d assertion failure(s)\n", failures());
     return failures() == 0 ? 0 : 1;
 }
 
@@ -76,6 +92,11 @@ inline int run_all() {
     static void name()
 
 #define CHECK(expr) ::test::report((expr), #expr, __FILE__, __LINE__, "")
+
+#define SKIP(reason)        \
+    throw ::test::Skipped { \
+        (reason)            \
+    }
 
 #define CHECK_EQ(a, b)                                                  \
     do {                                                                \

@@ -21,6 +21,14 @@
 #endif
 #endif
 
+// Xlib defines `Status` (and a pile of other bare words) as a macro, which
+// clobbers cc::Status and turns every Status-returning override into `int`.
+// Nothing here uses X11's Status, so it goes away immediately after the
+// headers that introduce it.
+#ifdef Status
+#undef Status
+#endif
+
 namespace cc {
 
 #if defined(CC_HAVE_X11)
@@ -144,7 +152,7 @@ public:
             for (int y = 0; y < h; ++y) {
                 std::uint8_t* row = f.pixels.data() + static_cast<std::size_t>(y) * f.stride;
                 for (int x = 0; x < w; ++x) {
-                    const unsigned long px = ::XGetPixel(image, x, y);
+                    const unsigned long px = XGetPixel(image, x, y);
                     std::uint8_t* p = row + static_cast<std::size_t>(x) * 4;
                     p[0] = expand((px & image->blue_mask) >> bs, bw);
                     p[1] = expand((px & image->green_mask) >> gs, gw);
@@ -153,7 +161,7 @@ public:
                 }
             }
         }
-        ::XDestroyImage(image);
+        XDestroyImage(image);
 
 #if defined(CC_HAVE_XFIXES)
         if (opts.include_cursor) draw_cursor(f, region);
@@ -168,11 +176,11 @@ public:
             ::XGetImage(dpy_, DefaultRootWindow(dpy_), static_cast<int>(std::lround(phys.x)),
                         static_cast<int>(std::lround(phys.y)), 1, 1, AllPlanes, ZPixmap);
         if (!image) return err(ErrorCode::BackendFailure, "XGetImage failed for a single pixel");
-        const unsigned long px = ::XGetPixel(image, 0, 0);
+        const unsigned long px = XGetPixel(image, 0, 0);
         const std::uint32_t r = (px & image->red_mask) >> 16;
         const std::uint32_t g = (px & image->green_mask) >> 8;
         const std::uint32_t b = (px & image->blue_mask);
-        ::XDestroyImage(image);
+        XDestroyImage(image);
         return (r << 24) | (g << 16) | (b << 8) | 0xFFu;
     }
 

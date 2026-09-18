@@ -20,12 +20,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <set>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "cc/input.hpp"
@@ -45,6 +47,14 @@
 #include <linux/uinput.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#endif
+
+// Xlib defines `Status` (and a pile of other bare words) as a macro, which
+// clobbers cc::Status and turns every Status-returning override into `int`.
+// Nothing here uses X11's Status, so it goes away immediately after the
+// headers that introduce it.
+#ifdef Status
+#undef Status
 #endif
 
 namespace cc {
@@ -712,7 +722,7 @@ public:
 #if defined(__linux__)
         if (touch_ready_ && contacts_down_ > 0) {
             std::vector<std::pair<int, std::pair<int, int>>> lift;
-            for (int i = 0; i < contacts_down_; ++i) lift.push_back({i, {0, 0}});
+            for (int i = 0; i < contacts_down_; ++i) lift.push_back({i, { 0, 0 }});
             touch_.frame(lift, 0, false, true);
             contacts_down_ = 0;
         }

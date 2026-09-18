@@ -15,9 +15,9 @@
 #import <Foundation/Foundation.h>
 
 #include <ApplicationServices/ApplicationServices.h>
-
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <string>
 #include <unordered_map>
 

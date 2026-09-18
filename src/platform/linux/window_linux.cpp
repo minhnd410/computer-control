@@ -5,7 +5,9 @@
 // EWMH is the de-facto standard and is what wmctrl and xdotool use.
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <thread>
 #include <vector>
@@ -17,6 +19,14 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#endif
+
+// Xlib defines `Status` (and a pile of other bare words) as a macro, which
+// clobbers cc::Status and turns every Status-returning override into `int`.
+// Nothing here uses X11's Status, so it goes away immediately after the
+// headers that introduce it.
+#ifdef Status
+#undef Status
 #endif
 
 namespace cc {

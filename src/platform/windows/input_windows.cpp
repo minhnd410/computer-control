@@ -18,16 +18,18 @@
 //    level. Clicks into an elevated app from a non-elevated process are
 //    silently discarded, which looks exactly like a coordinate bug. The error
 //    path below names this explicitly.
-
+// <windows.h> must come before every other Windows SDK header: psapi.h and
+// friends use BOOL, DWORD and WINAPI without declaring them. The blank lines
+// keep clang-format from sorting these groups into one another.
 #include <windows.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <mutex>
 #include <set>
 #include <thread>
 #include <vector>
-
 #include "cc/input.hpp"
 #include "core/motion.hpp"
 

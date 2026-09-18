@@ -5,11 +5,11 @@
 #include <libproc.h>
 #include <signal.h>
 #include <sys/sysctl.h>
-
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include "cc/system.hpp"
@@ -123,7 +123,7 @@ public:
             if (proc_pidpath(static_cast<int>(info.pid), path, sizeof(path)) > 0) {
                 info.command = path;
             }
-            struct proc_taskinfo ti{};
+            struct proc_taskinfo ti {};
             if (proc_pidinfo(static_cast<int>(info.pid), PROC_PIDTASKINFO, 0, &ti, sizeof(ti)) ==
                 sizeof(ti)) {
                 info.memory_bytes = static_cast<std::int64_t>(ti.pti_resident_size);

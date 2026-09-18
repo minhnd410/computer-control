@@ -18,7 +18,9 @@
 // onscreen for input when idb is absent.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <map>
 
 #include "core/json.hpp"

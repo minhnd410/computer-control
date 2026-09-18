@@ -14,13 +14,25 @@
 #endif
 #endif
 
+// Xlib defines `Status` (and a pile of other bare words) as a macro, which
+// clobbers cc::Status and turns every Status-returning override into `int`.
+// Nothing here uses X11's Status, so it goes away immediately after the
+// headers that introduce it.
+#ifdef Status
+#undef Status
+#endif
+
 namespace cc {
 
 #if defined(CC_HAVE_X11)
 // Shared across the X11 backends. One connection per process: XOpenDisplay is
 // expensive and Xlib is only thread-safe after XInitThreads, which is called
 // once here.
-Display* x11_display();
+//
+// The leading :: is load-bearing: X11's Display is a global typedef and this
+// namespace has its own cc::Display struct, so a bare Display* here compiles
+// as the wrong type.
+::Display* x11_display();
 #endif
 
 namespace {

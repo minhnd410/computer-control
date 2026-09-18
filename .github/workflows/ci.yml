@@ -132,11 +132,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: clang-format
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Pinned rather than apt's clang-format: the formatter's output changes
+      # between major versions, so an unpinned one makes this job fail
+      # depending on which runner image and which contributor's machine ran
+      # last. The pip package is the same binary on every platform.
+      - name: Install clang-format
+        run: pip install "clang-format==18.1.8"
+
+      - name: Check formatting
         run: |
-          sudo apt-get update && sudo apt-get install -y clang-format
-          find include src tests -name '*.hpp' -o -name '*.cpp' -o -name '*.h' -o -name '*.mm' \
-            | xargs clang-format --dry-run --Werror
+          find include src tests \
+            \( -name '*.hpp' -o -name '*.cpp' -o -name '*.h' -o -name '*.mm' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
 
       - name: No credentials committed
         run: |

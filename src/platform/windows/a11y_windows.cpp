@@ -8,16 +8,19 @@
 // takes tens of seconds. Building a CacheRequest and using
 // FindAllBuildCache fetches everything in one round trip per subtree, which is
 // the difference between 50ms and 30s.
+// <windows.h> must come before every other Windows SDK header: psapi.h and
+// friends use BOOL, DWORD and WINAPI without declaring them. The blank lines
+// keep clang-format from sorting these groups into one another.
+#include <windows.h>
 
 #include <objbase.h>
 #include <uiautomation.h>
-#include <windows.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <string>
-
 #include "cc/accessibility.hpp"
 
 namespace cc {

@@ -9,9 +9,12 @@
 // `input swipe` cannot express multi-touch, a freehand path, or pressure.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <sstream>
+#include <utility>
 
 #include "devices/device_internal.hpp"
 

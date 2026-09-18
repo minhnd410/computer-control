@@ -8,15 +8,17 @@
 // device, and it fails on the secure desktop. For one-shot screenshots - which
 // is what an automation server actually does - BitBlt from the screen DC is
 // simpler, works everywhere, and the cost is dominated by PNG encoding anyway.
+// <windows.h> must come before every other Windows SDK header: psapi.h and
+// friends use BOOL, DWORD and WINAPI without declaring them. The blank lines
+// keep clang-format from sorting these groups into one another.
+#include <windows.h>
 
 #include <dwmapi.h>
-#include <windows.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <vector>
-
 #include "cc/screen.hpp"
 
 namespace cc {

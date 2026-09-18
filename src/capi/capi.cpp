@@ -10,11 +10,15 @@
 
 #include "cc/capi.h"
 
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <mutex>
 #include <new>
 #include <string>
+#include <utility>
 
 #include "capi/actions.hpp"
 #include "cc/session.hpp"

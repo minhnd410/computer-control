@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -10,6 +11,9 @@
 #include "cc/window.hpp"
 #include "devices/device_internal.hpp"
 
+// The subprocess helper below is the one genuinely platform-split piece of the
+// device layer: CreateProcess and posix_spawn have nothing in common beyond
+// the shape of the problem.
 #if defined(_WIN32)
 #include <windows.h>
 #else

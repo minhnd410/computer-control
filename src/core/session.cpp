@@ -189,8 +189,31 @@ std::string Session::capability_report() {
     probe("input", [&] { return input(); });
     probe("screen", [&] { return screen(); });
     probe("windows", [&] { return windows(); });
-    probe("accessibility", [&] { return accessibility(); });
     probe("system", [&] { return system(); });
+
+    // Accessibility is constructed unconditionally so that a caller who only
+    // wants screenshots is never blocked by a missing grant. That makes
+    // construction a useless signal, so report the readiness check instead -
+    // otherwise the report says "available" for a backend that cannot answer
+    // a single query.
+    {
+        json::Value v = json::Value::object();
+        auto a11y = accessibility();
+        if (!a11y) {
+            v.set("available", false);
+            v.set("error", a11y.error().message);
+            if (!a11y.error().remedy.empty()) v.set("remedy", a11y.error().remedy);
+        } else if (auto ready = a11y.value()->check_permission(false); !ready) {
+            v.set("available", false);
+            v.set("backend", a11y.value()->name());
+            v.set("error", ready.error().message);
+            if (!ready.error().remedy.empty()) v.set("remedy", ready.error().remedy);
+        } else {
+            v.set("available", true);
+            v.set("backend", a11y.value()->name());
+        }
+        backends.set("accessibility", v);
+    }
     root.set("backends", backends);
 
     // Gesture fidelity is the thing that differs most between platforms, so it

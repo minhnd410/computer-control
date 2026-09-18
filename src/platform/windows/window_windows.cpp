@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MIT
+// <windows.h> must come before every other Windows SDK header: psapi.h and
+// friends use BOOL, DWORD and WINAPI without declaring them. The blank lines
+// keep clang-format from sorting these groups into one another.
+#include <windows.h>
+
 #include <dwmapi.h>
 #include <psapi.h>
 #include <shellapi.h>
-#include <windows.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <thread>
 #include <vector>
