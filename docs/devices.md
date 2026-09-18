@@ -30,6 +30,4 @@ Coordinates are always in the **device's own points**. An iPhone 15 Pro is 393×
 
 ---
 
----
-
 [← README](../README.md)
