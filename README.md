@@ -345,6 +345,8 @@ This library can do anything the user in front of the machine can do. Treat it a
 
 **Never commit credentials.** `.gitignore` excludes tokens, keys and captured images by default — screenshots routinely contain password managers, private messages and customer data.
 
+[SECURITY.md](SECURITY.md) has the threat model and how to report a vulnerability.
+
 ---
 
 ## Project layout

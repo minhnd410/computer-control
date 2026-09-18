@@ -61,5 +61,6 @@ is a deliberate property, not an oversight.
 ## Security
 
 Never commit credentials or screenshots — captures routinely contain password
-managers and private messages. For a suspected vulnerability, open a private
-security advisory rather than a public issue.
+managers and private messages. For a suspected vulnerability, follow
+[SECURITY.md](SECURITY.md) and open a private advisory rather than a public
+issue.
