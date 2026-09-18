@@ -72,6 +72,16 @@ These are the things that break subtly if you get them wrong.
 - Error detail is thread-local (`cc_last_error_*`).
 - Bump `CC_ABI_VERSION` only for a breaking change, and update `ABI_VERSION` in `bindings/python/computer_control/_ffi.py` to match.
 
+## Verification status
+
+As of v0.1.0: macOS and Linux have been exercised against a real desktop; the
+Windows backend has only been compiled and unit-tested, never run. The Linux
+`uinput` native-gesture path is also unrun, because the container it was tested
+in has no writable `/dev/uinput`. Treat both as plausible rather than proven.
+
+This matters when reading the platform notes below: the macOS ones were learned
+by hitting them, the Windows ones come from the documented API contracts.
+
 ## Platform notes worth knowing before you debug
 
 **macOS**

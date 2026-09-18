@@ -67,6 +67,23 @@ This is the table worth reading before you design around gestures.
 
 Run `cc capabilities` on any machine for the live answer.
 
+**How much of this has been run, as of v0.1.0.** The table describes what each
+backend is built on; it is not all equally exercised, and it would be dishonest
+to imply otherwise:
+
+| | Compiled | Unit-tested | Run against a real desktop |
+|---|---|---|---|
+| macOS (arm64, x86_64) | yes | yes | yes — capture, pointer, clicks, drag, stroke, gestures, accessibility tree |
+| Linux (gcc, clang) | yes | yes | yes, under Xvfb in the container — capture, pointer, clicks, Unicode typing, chords, emulated gestures |
+| Windows (MSVC) | yes | yes | **not yet** |
+
+Specifically unverified at runtime: the Windows backend in its entirety
+(`InjectTouchInput`, UI Automation, GDI capture, SendInput), and the Linux
+`uinput` native-gesture path, which needs a host with writable `/dev/uinput` —
+the container falls back to emulation. Those paths are written against the
+documented APIs and compile cleanly, but "compiles" is not "works". Reports
+from either platform are very welcome.
+
 ---
 
 ## Installation

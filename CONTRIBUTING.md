@@ -39,6 +39,12 @@ typed access rather than the JSON path.
 
 ## Platform work
 
+Nobody has run the Windows backend yet — it compiles and passes the hermetic
+tests on CI, and that is all. The Linux `uinput` native-gesture path is in the
+same position. If you are the first to actually exercise either, that is a
+genuinely useful contribution even if you change no code; please say so in an
+issue.
+
 You can only properly test the backend for the OS you are on. That is fine —
 say in the PR which platforms you exercised. CI builds all three and runs the
 hermetic tests everywhere.
