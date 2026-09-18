@@ -380,6 +380,7 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 | [Tool comparison](docs/tool-comparison.md) | What carried over from Windows-MCP and macOS-MCP, what was dropped, and why. |
 | [CLAUDE.md](CLAUDE.md) | Architecture and the invariants that break subtly. |
 | [Docker notes](docker/README.md) | What the container can and cannot do. |
+| [examples/](examples/) | Runnable: capabilities, coordinate spaces, gestures, devices, the C++ API. |
 
 ## Prior art
 
