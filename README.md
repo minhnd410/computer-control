@@ -104,10 +104,10 @@ Maintainer-tested:
 | OS | Version | Tested by | Exercised |
 |---|---|---|---|
 | macOS | 26.6 (Tahoe), Apple silicon | maintainer | capture, pointer, clicks, drag, stroke, gestures, accessibility tree, permissions, launcher, search, shell, simulator discovery |
-| Linux | Debian 12 under Xvfb (container) | CI + maintainer | capture, pointer, clicks, Unicode typing, chords, emulated gestures, permission reporting |
+| Linux | Debian 12 under Xvfb | maintainer, **in the Docker image that has since been removed** | capture, pointer, clicks, Unicode typing, chords, emulated gestures, permission reporting |
 | Windows | 11 | maintainer, **before the current code** | see below |
 
-Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), Linux (gcc + clang).
+Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), Linux (gcc + clang, under Xvfb).
 
 **Windows needs a re-test.** The two behaviours that were checked there — running a PowerShell script, and multi-finger trackpad swipes — both turned out to be broken, and both were rewritten. PowerShell now goes through `-EncodedCommand` because the old quoting mangled any script containing a double quote; multi-finger swipes now map to shell shortcuts because touch injection cannot produce a touchpad gesture at all. Neither rewrite has been run on Windows. If you have a Windows machine, this is the single most useful thing to try.
 
@@ -121,23 +121,30 @@ Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), 
 
 ## Install
 
-Four ways, with real trade-offs. Full detail and the comparison table: **[docs/install.md](docs/install.md)**.
+Download the archive for your platform from
+[Releases](https://github.com/minhnd410/computer-control/releases), or build
+it. Details: **[docs/install.md](docs/install.md)**.
 
 ```bash
-# curl — builds from source today; there is no tagged release yet
-curl -fsSL https://raw.githubusercontent.com/minhnd410/computer-control/main/packaging/scripts/install.sh | sh
+# macOS (Apple silicon) — see the docs for the other platforms
+curl -fsSL -o cc.tar.gz https://github.com/minhnd410/computer-control/releases/latest/download/computer-control-macos-arm64.tar.gz
+tar -xzf cc.tar.gz && sudo mv computer-control/cc computer-control/computer-control-mcp /usr/local/bin/
 
-# Homebrew (formula in-repo; no tap published yet)
-brew install --build-from-source ./packaging/homebrew/computer-control.rb
-
-# Windows (manifests in-repo; not yet submitted to winget-pkgs)
-winget install computer-control
-
-# from source — the supported path
+# or from source
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 ```
 
-> **Status:** no tagged release, no PyPI wheel, nothing code-signed. `uvx computer-control-mcp` and `winget install` will work once a release exists; today they need a local build. [docs/install.md](docs/install.md) says exactly what works now.
+Then point your MCP client at it:
+
+```json
+{ "mcpServers": { "computer-control": { "command": "computer-control-mcp" } } }
+```
+
+> **Coming soon, not available:** Homebrew, winget, `uvx`, and `curl | sh`. The
+> scaffolding is in [`packaging/`](packaging); nothing is published to a tap,
+> a manifest repository or an index yet. The release archives are also
+> unsigned — on macOS that means Gatekeeper quarantine, and an Accessibility
+> grant that does not survive an upgrade.
 
 **Claude Code in WSL:** install the **Windows** build and have WSL launch it. A Linux binary inside WSL cannot control Windows — WSLg is one-directional. See [docs/wsl.md](docs/wsl.md).
 
@@ -191,7 +198,7 @@ src/platform/      macos/ (CGEvent, ScreenCaptureKit, AX)
 src/devices/       Simulator, emulator and mirrored-device transports
 src/actions/       The shared action dispatcher: JSON in, JSON out
 src/mcp/ src/cli/  MCP server and the `cc` command
-packaging/         curl installer, Homebrew formula, winget manifests
+packaging/         Homebrew formula, winget manifests, install script (none published)
 ```
 
 Both front-ends funnel through one action dispatcher (`src/actions/actions.cpp`), so the CLI and the MCP server cannot drift apart. Adding a capability is one `ActionSpec` there.
@@ -213,7 +220,7 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 
 | | |
 |---|---|
-| [Install](docs/install.md) | All four methods, with trade-offs and current status. |
+| [Install](docs/install.md) | Release archives, building from source, what is not published yet. |
 | [MCP server](docs/mcp.md) | Client config, transports, tool gating. |
 | [Permissions](docs/permissions.md) | Per-platform grants, and the macOS responsible-process problem. |
 | [Devices](docs/devices.md) | iOS simulators, Android emulators, mirrored handsets. |
@@ -221,7 +228,6 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 | [Coordinate spaces](docs/coordinate-spaces.md) | Logical vs physical vs image, mixed DPI, device points. |
 | [JSON schema](docs/json-schema.md) | Every JSON payload the MCP tools and `cc --raw` return. |
 | [Tool comparison](docs/tool-comparison.md) | What came from Windows-MCP and macOS-MCP, and what did not. |
-| [Docker](docker/README.md) | What the container can and cannot do. |
 | [examples/](examples/) | Runnable: capabilities, coordinate spaces, gestures, devices. |
 | [tools/make_demo_gif.py](tools/make_demo_gif.py) | Regenerates the GIFs above from real command output. |
 

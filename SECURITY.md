@@ -59,10 +59,10 @@ What is **out of scope**:
 - Give an untrusted client the narrowest surface that works —
   `--tools capabilities,displays,screenshot,snapshot,zoom` is a useful
   read-mostly starting point.
-- For genuinely untrusted automation, run the Docker image. A container cannot
-  reach the host's display server, which is the only real isolation boundary
-  available here. Note that `--device /dev/uinput` gives it input-injection
-  rights against the host kernel and gives that boundary away.
+- For genuinely untrusted automation, run it against a display the host does
+  not share — a separate user session, a VM, or a dedicated machine. There is
+  no in-process sandbox: a tool that can drive the desktop can drive every
+  application on it, and no flag changes that.
 - Never commit screenshots. Captures routinely contain password managers,
   private messages and customer data; `.gitignore` excludes images by default
   for that reason.

@@ -1,0 +1,118 @@
+name: Release
+
+# Tagging is the release process: push a v-prefixed tag and this builds every
+# platform, attaches the archives, and publishes. Nothing is uploaded by hand,
+# so what people download is always what CI built from that tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build a release from"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # These names are a contract: packaging/scripts/install.sh derives
+          # the archive URL from `uname`, so renaming one breaks the installer.
+          - { target: linux-x86_64,  os: ubuntu-latest }
+          - { target: macos-arm64,   os: macos-latest }
+          - { target: macos-x86_64,  os: macos-15-intel }
+          - { target: windows-x86_64, os: windows-latest }
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build \
+            libx11-dev libxtst-dev libxrandr-dev libxfixes-dev zlib1g-dev
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j 4
+
+      # A release binary that fails to start is worse than no release. This is
+      # the same smoke test CI runs, repeated here because the release build
+      # uses different flags.
+      - name: Smoke test
+        shell: bash
+        run: |
+          BIN=build/cc
+          [ -f build/Release/cc.exe ] && BIN=build/Release/cc.exe
+          "$BIN" --version
+          MCP=build/computer-control-mcp
+          [ -f build/Release/computer-control-mcp.exe ] && MCP=build/Release/computer-control-mcp.exe
+          "$MCP" --version
+          "$MCP" --list-tools > /dev/null
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist/computer-control
+          if [ -f build/Release/cc.exe ]; then
+            cp build/Release/cc.exe build/Release/computer-control-mcp.exe dist/computer-control/
+          else
+            cp build/cc build/computer-control-mcp dist/computer-control/
+          fi
+          cp LICENSE README.md dist/computer-control/
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "computer-control-${{ matrix.target }}.zip" computer-control > /dev/null
+          else
+            tar -czf "computer-control-${{ matrix.target }}.tar.gz" computer-control
+          fi
+          # Checksums are generated next to each archive so a user can verify a
+          # download without trusting the page it came from.
+          for f in computer-control-${{ matrix.target }}.*; do
+            if command -v sha256sum > /dev/null; then sha256sum "$f" > "$f.sha256";
+            else shasum -a 256 "$f" > "$f.sha256"; fi
+          done
+          rm -rf computer-control
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          ls -la dist
+          # --verify-tag refuses to invent a tag that does not exist, and the
+          # notes are generated from the commits since the previous release.
+          gh release create "$TAG" dist/* \
+            --title "$TAG" \
+            --verify-tag \
+            --generate-notes
