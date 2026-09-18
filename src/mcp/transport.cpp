@@ -253,8 +253,36 @@ private:
         respond(status, out.dump());
     }
 
+    // A browser can be made to POST to a loopback port by any page the user
+    // visits (DNS rebinding, or just a form). It always sends Origin; a
+    // non-browser client normally sends none. So an absent Origin is fine and
+    // a cross-origin one is refused - required since MCP 2025-11-25, and the
+    // only thing standing between a web page and a server that drives the
+    // desktop.
+    bool origin_is_allowed(const std::string& headers, const std::string& lowered) {
+        const std::string origin = header_value(headers, lowered, "origin");
+        if (origin.empty()) return true;
+        const std::string o = lower(origin);
+        static const char* const kAllowed[] = {"http://localhost", "https://localhost",
+                                               "http://127.0.0.1", "https://127.0.0.1",
+                                               "http://[::1]",     "https://[::1]"};
+        for (const char* prefix : kAllowed) {
+            const std::size_t n = std::strlen(prefix);
+            if (o.compare(0, n, prefix) != 0) continue;
+            // Match the whole host, so http://localhost.evil.com is not
+            // mistaken for http://localhost by a prefix compare.
+            if (o.size() == n || o[n] == ':') return true;
+        }
+        return false;
+    }
+
     bool check_routing_headers(const std::string& headers, const std::string& body) {
         const std::string lowered = lower(headers);
+
+        if (!origin_is_allowed(headers, lowered)) {
+            respond(403, "{\"error\":\"origin not allowed\"}");
+            return false;
+        }
 
         const std::string version = header_value(headers, lowered, "mcp-protocol-version");
         json::ParseError pe;

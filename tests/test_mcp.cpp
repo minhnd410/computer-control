@@ -67,13 +67,18 @@ json::Value meta_of(const json::Value& v) {
 
 TEST(mcp_advertises_newest_version_first) {
     const auto versions = mcp::supported_versions();
-    CHECK_EQ(versions.size(), std::size_t{2});
+    CHECK_EQ(versions.size(), std::size_t{3});
     // Clients pick the first version they recognise, so the order is load
     // bearing, not cosmetic.
     CHECK_EQ(versions[0], std::string(mcp::kModernProtocol));
     CHECK_EQ(versions[1], std::string(mcp::kLegacyProtocol));
+    CHECK_EQ(versions[2], std::string(mcp::kOldestProtocol));
     CHECK(mcp::is_supported_version(mcp::kModernProtocol));
     CHECK(mcp::is_supported_version(mcp::kLegacyProtocol));
+    CHECK(mcp::is_supported_version(mcp::kOldestProtocol));
+    // The revision real clients ask for today. Losing it would silently
+    // downgrade every Claude Code session to an older one.
+    CHECK(mcp::is_supported_version("2025-11-25"));
     CHECK(!mcp::is_supported_version("2024-11-05"));
     CHECK(!mcp::is_supported_version(""));
 }
@@ -138,7 +143,7 @@ TEST(mcp_classify_rejects_an_unsupported_version) {
     // The client cannot fall forward without being told what this server
     // does speak.
     CHECK_EQ(ctx.error["data"]["requested"].as_string(), std::string("2030-01-01"));
-    CHECK_EQ(ctx.error["data"]["supported"].size(), std::size_t{2});
+    CHECK_EQ(ctx.error["data"]["supported"].size(), std::size_t{3});
 }
 
 TEST(mcp_classify_requires_client_capabilities) {
@@ -197,7 +202,7 @@ TEST(mcp_discover_answers_without_a_handshake) {
     json::Value r = result_of(server.handle_message(modern("server/discover")));
 
     CHECK_EQ(r["resultType"].as_string(), std::string("complete"));
-    CHECK_EQ(r["supportedVersions"].size(), std::size_t{2});
+    CHECK_EQ(r["supportedVersions"].size(), std::size_t{3});
     CHECK_EQ(r["supportedVersions"][0].as_string(), std::string("2026-07-28"));
     CHECK(r["capabilities"].contains("tools"));
     CHECK(!r["instructions"].as_string().empty());
@@ -267,9 +272,29 @@ TEST(mcp_initialize_falls_back_on_an_unknown_version) {
     const std::string init = R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
                              R"("protocolVersion":"2024-11-05","capabilities":{}}})";
     json::Value r = result_of(server.handle_message(init));
-    // A legacy client has no fall-forward mechanism, so refusing here leaves
-    // it with nothing. Offer the oldest version we speak instead.
-    CHECK_EQ(r["protocolVersion"].as_string(), std::string("2025-06-18"));
+    // A handshake-era client has no fall-forward mechanism, so refusing here
+    // leaves it with nothing. Offer the newest handshake revision instead.
+    CHECK_EQ(r["protocolVersion"].as_string(), std::string("2025-11-25"));
+}
+
+TEST(mcp_initialize_echoes_the_revision_real_clients_send) {
+    // Claude Code opens with exactly this, confirmed by teeing a real session:
+    // initialize{2025-11-25} -> notifications/initialized -> tools/list. If
+    // this ever answers something else, every such client is silently
+    // downgraded and nothing says so.
+    mcp::Server server(test_config());
+    const std::string init = R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+                             R"("protocolVersion":"2025-11-25","capabilities":{},)"
+                             R"("clientInfo":{"name":"claude-code","version":"2.0"}}})";
+    json::Value r = result_of(server.handle_message(init));
+    CHECK_EQ(r["protocolVersion"].as_string(), std::string("2025-11-25"));
+
+    // And the bare follow-ups a handshake client sends must work.
+    CHECK_EQ(server.handle_message(R"({"jsonrpc":"2.0","method":"notifications/initialized"})"),
+             std::string());
+    CHECK(result_of(server.handle_message(
+              R"({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})"))["tools"]
+              .size() > 0);
 }
 
 // --- dispatch: errors -----------------------------------------------------
@@ -315,6 +340,55 @@ TEST(mcp_a_disabled_tool_reports_itself_as_a_tool_error) {
         server.handle_message(modern("tools/call", R"("name":"screenshot","arguments":{})")));
     CHECK(r["isError"].as_bool());
     CHECK(r["content"][0]["text"].as_string().find("disabled") != std::string::npos);
+}
+
+// Walks a JSON Schema and reports the nodes that would fail a strict
+// validator. Recursive because a bad node can be nested arbitrarily deep.
+namespace {
+
+void check_schema_node(const json::Value& node, const std::string& tool, const std::string& path) {
+    if (node.is_object()) {
+        // An `array` with no `items` is the one that bites in practice:
+        // GitHub Copilot rejects the whole tool with "tool parameters array
+        // type must have items", so a single missing key takes the server
+        // down for that client rather than degrading one argument.
+        if (node["type"].as_string() == "array" && !node.contains("items")) {
+            char note[256];
+            std::snprintf(note, sizeof(note), "%s: '%s' is type array with no 'items'",
+                          tool.c_str(), path.c_str());
+            ::test::report(false, "array schema declares items", __FILE__, __LINE__, note);
+        }
+        for (const auto& [key, child] : node.as_object()) {
+            check_schema_node(child, tool, path.empty() ? key : path + "." + key);
+        }
+    } else if (node.is_array()) {
+        for (std::size_t i = 0; i < node.size(); ++i) {
+            check_schema_node(node[i], tool, path + "[]");
+        }
+    }
+}
+
+}  // namespace
+
+TEST(mcp_tool_schemas_survive_a_strict_validator) {
+    mcp::ServerConfig cfg = test_config();
+    // Every tool, including the gated ones, because a client that enables them
+    // validates them too.
+    cfg.session.allow_registry = true;
+    mcp::Server server(cfg);
+
+    json::Value list = result_of(server.handle_message(modern("tools/list")));
+    CHECK(list["tools"].size() > 0);
+
+    for (std::size_t i = 0; i < list["tools"].size(); ++i) {
+        const json::Value& tool = list["tools"][i];
+        const std::string name = tool["name"].as_string();
+        const json::Value& schema = tool["inputSchema"];
+        // A tool whose schema is not an object cannot be validated at all.
+        CHECK(schema.is_object());
+        CHECK(schema["type"].as_string() == "object");
+        check_schema_node(schema, name, "");
+    }
 }
 
 TEST(mcp_registry_is_hidden_unless_it_is_asked_for) {

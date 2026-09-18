@@ -20,6 +20,11 @@ computer-control-mcp --doctor                # why is nothing happening?
 computer-control-mcp --list-tools
 ```
 
+Speaks the current MCP revision **2026-07-28** statelessly, and falls back to
+the handshake-based **2025-11-25** and **2025-06-18** — which is what clients
+actually send today, Claude Code included. See
+[protocol revisions](docs/mcp.md#protocol-revisions).
+
 ---
 
 ## Install

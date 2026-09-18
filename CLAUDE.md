@@ -6,7 +6,7 @@ Guidance for Claude Code and other agents working in this repository.
 
 An MCP server for desktop and mobile-simulator automation on macOS, Windows and
 Linux, on a C++20 core. **MCP is the primary contract**, spoken at revision
-2026-07-28 with a 2025-06-18 fallback.
+2026-07-28 with 2025-11-25 and 2025-06-18 fallbacks.
 
 **`computer-control-mcp` is the only binary.** There was a `cc` CLI mirroring
 the same action registry; it was removed because it added no capability and
@@ -76,7 +76,7 @@ These are the things that break subtly if you get them wrong.
 
 **8. stdout belongs to the MCP protocol.** On the stdio transport, any stray write corrupts the stream and the client drops the connection with an opaque parse error. Log to stderr.
 
-**9. The server speaks two protocol eras, and must keep doing so.** 2026-07-28 is stateless: a request carrying `_meta` with a protocol version is served in isolation, and the server must not infer anything about it from earlier requests. 2025-06-18 is handshake-based, and whatever Claude Desktop and Cursor ship today still sends `initialize`, so dropping it breaks real setups. `legacy_session_` is the *only* per-connection state in the server; adding a second piece re-introduces the statefulness the revision removed. `src/mcp/protocol.cpp` decides the era, and `tests/test_mcp.cpp` drives both paths through the real dispatcher — add a case there rather than reasoning about the wire format from memory.
+**9. The server speaks two protocol eras, and must keep doing so.** 2026-07-28 is stateless: a request carrying `_meta` with a protocol version is served in isolation, and the server must not infer anything about it from earlier requests. The older revisions are handshake-based, and real clients still open with `initialize` — Claude Code sends `initialize{2025-11-25}`, confirmed by teeing a live session — so dropping them breaks working setups. `legacy_session_` is the *only* per-connection state in the server; adding a second piece re-introduces the statefulness the revision removed. `src/mcp/protocol.cpp` decides the era, and `tests/test_mcp.cpp` drives both paths through the real dispatcher — add a case there rather than reasoning about the wire format from memory. The handshake list is `2025-11-25` then `2025-06-18`: 2025-11-25 is what Claude Code actually sends, verified by teeing a live session, so dropping it silently downgrades every such client. Tool schemas are validated by a test too, because a single `type: array` with no `items` makes GitHub Copilot reject the whole tool.
 
 ## Platform notes worth knowing before you debug
 

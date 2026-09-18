@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-// MCP wire protocol, revision 2026-07-28, with a fallback for 2025-06-18.
+// MCP wire protocol: 2026-07-28, falling back to the handshake-based
+// revisions 2025-11-25 and 2025-06-18.
 //
 // 2026-07-28 made the protocol stateless. There is no initialize handshake any
 // more: every request carries its protocol version and the client's
@@ -12,7 +13,7 @@
 //
 // Clients lag servers, so this speaks both eras. Which one a request gets is
 // decided by how it opens, per the spec's dual-era rules: a request carrying
-// modern `_meta` is served statelessly, an `initialize` selects legacy
+// modern `_meta` is served statelessly, an `initialize` selects handshake
 // semantics for the rest of the stdio process.
 
 #include <string>
@@ -25,8 +26,17 @@ namespace cc::mcp {
 
 // Newest first: this is also the order advertised in server/discover and in
 // the `supported` list of an UnsupportedProtocolVersionError.
+//
+// 2025-11-25 is the newest handshake-based revision and is what real clients
+// send today - Claude Code asks for exactly this. Everything it added over
+// 2025-06-18 is either optional (icons, experimental tasks), client-side
+// (elicitation, sampling tool calls), OAuth for HTTP, or a clarification this
+// server already satisfies; the one requirement that bites a server like this
+// is Origin validation on the HTTP transport, which the transport enforces.
+// 2025-06-18 stays because clients that predate the newer one still exist.
 inline constexpr const char* kModernProtocol = "2026-07-28";
-inline constexpr const char* kLegacyProtocol = "2025-06-18";
+inline constexpr const char* kLegacyProtocol = "2025-11-25";
+inline constexpr const char* kOldestProtocol = "2025-06-18";
 
 // Reserved `_meta` keys. Spelled out rather than built from a prefix constant
 // so a grep for the literal finds every use.

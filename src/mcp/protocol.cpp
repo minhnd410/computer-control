@@ -19,7 +19,7 @@ bool is_legacy_only_method(std::string_view method) {
 
 std::vector<std::string> supported_versions() {
     // Newest first: clients pick the first they recognise.
-    return {kModernProtocol, kLegacyProtocol};
+    return {kModernProtocol, kLegacyProtocol, kOldestProtocol};
 }
 
 bool is_supported_version(std::string_view version) {

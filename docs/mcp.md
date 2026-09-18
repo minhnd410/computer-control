@@ -38,14 +38,20 @@ CC_AUTH_TOKEN=$(openssl rand -hex 16) computer-control-mcp --transport http --po
 
 ## Protocol revisions
 
-The server speaks **2026-07-28** and falls back to **2025-06-18**. Which one a
+The server speaks **2026-07-28**, **2025-11-25** and **2025-06-18**. Which era a
 request gets is decided by how it opens, not by a server setting:
 
 | The client sends | It gets |
 |---|---|
-| `_meta` with `io.modelcontextprotocol/protocolVersion` | 2026-07-28, served statelessly |
-| `initialize` | 2025-06-18 for the rest of the process |
+| `_meta` with `io.modelcontextprotocol/protocolVersion` | that revision, served statelessly |
+| `initialize` | the requested revision if supported, otherwise 2025-11-25 |
 | Neither | `-32602`, naming the field that is missing |
+
+2025-11-25 is the newest handshake-based revision and is what clients actually
+send today — Claude Code opens with exactly it. Everything it added over
+2025-06-18 is optional (icons, experimental tasks), client-side (elicitation,
+sampling tool calls), OAuth for HTTP, or a clarification; the one requirement
+that lands on a server like this is Origin validation, below.
 
 2026-07-28 made the protocol stateless. There is no handshake: every request
 carries its own protocol version and client capabilities, so the server holds
@@ -69,7 +75,7 @@ Error codes follow the spec's reserved range:
 | Code | Meaning |
 |---|---|
 | `-32020` | `Mcp-Method` or `Mcp-Name` contradicts the request body (HTTP only) |
-| `-32022` | The requested protocol version is not one of the two above |
+| `-32022` | The requested protocol version is not one of the three above |
 | `-32602` | A required `_meta` field is missing; the message names which |
 
 ### Over HTTP
@@ -82,6 +88,15 @@ gateway. The headers are validated when present rather than required: an absent
 header cannot contradict anything, and requiring them would break pre-2026
 clients for no gain on a loopback socket. Responses carry
 `MCP-Protocol-Version`.
+
+**Origin is validated.** A request whose `Origin` is not loopback gets `403`,
+as 2025-11-25 requires. This is the only thing standing between a web page and
+a server that drives the desktop: any site the user visits can make their
+browser POST to a loopback port, and DNS rebinding defeats the usual
+same-origin assumptions. A browser always sends `Origin`; a non-browser client
+normally sends none, so an absent header is allowed and a cross-origin one is
+not. The host is matched in full, so `http://localhost.evil.com` is refused
+rather than passing a prefix check.
 
 ### No `outputSchema`
 

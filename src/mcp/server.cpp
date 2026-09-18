@@ -73,8 +73,9 @@ json::Value Server::handle_discover() {
 
 json::Value Server::handle_initialize(const json::Value& params) {
     json::Value out = json::Value::object();
-    // Echo the requested version when supported. A legacy client has no
-    // fall-forward mechanism, so refusing here leaves it with nothing.
+    // Echo the requested version when supported. A handshake-era client has no
+    // fall-forward mechanism, so refusing here leaves it with nothing; offer
+    // the newest handshake revision instead and let it decide.
     const std::string requested = params["protocolVersion"].as_string(kLegacyProtocol);
     out.set("protocolVersion",
             is_supported_version(requested) ? requested : std::string(kLegacyProtocol));

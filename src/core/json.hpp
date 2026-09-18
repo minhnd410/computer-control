@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-// A small, dependency-free JSON value. Enough for MCP framing, the C ABI's
-// JSON-shaped returns, and config parsing. Deliberately not a general-purpose
-// library: no comments, no trailing commas, no arbitrary-precision numbers.
+// A small, dependency-free JSON value. Enough for MCP framing, the action
+// dispatcher's JSON-shaped returns, and config parsing. Deliberately not a
+// general-purpose library: no comments, no trailing commas, no arbitrary-
+// precision numbers.
 
 #include <cstdint>
 #include <initializer_list>
