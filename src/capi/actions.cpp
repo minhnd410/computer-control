@@ -4,6 +4,7 @@
 #include "core/text.hpp"
 
 #include "cc/permissions.hpp"
+#include "cc/system_ui.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -478,6 +479,20 @@ const std::vector<ActionSpec>& registry() {
             "permission":{"type":"string","enum":["accessibility","screen_recording","input_monitoring","touch_injection"],"description":"Limit to one; default is all."}}})",
          false, false},
 
+        {"system", "System",
+         "Shell-level actions every desktop has but none exposes as an API: open the launcher "
+         "or search, switch virtual desktops, show the overview, lock the screen. Use this "
+         "rather than trying to synthesize the trackpad gesture - a four-finger swipe is "
+         "interpreted by the touchpad driver from HID reports and cannot be produced by touch "
+         "injection, whereas these shortcuts are exactly what that driver ends up invoking. "
+         "They are also instant, with no gesture-recogniser timing to lose. Note that success "
+         "means the shortcut was delivered, not that the OS acted on it: these are all "
+         "user-remappable, and a disabled or rebound shortcut fails silently. Take a "
+         "screenshot if you need to confirm the effect.",
+         R"({"type":"object","properties":{
+            "action":{"type":"string","description":"search, launcher, app_switcher, overview, show_desktop, next_desktop, previous_desktop, notifications, screenshot_ui, emoji, run_dialog, settings, file_manager, lock_screen. Aliases like spotlight, start, task_view, mission_control and explorer are accepted. Omit to list what this host supports."}}})",
+         false, true},
+
         {"capabilities", "Capabilities",
          "Report what this host can do: displays and their DPI scale, which backends came up, "
          "which permissions are missing, gesture fidelity per gesture type, and which mobile "
@@ -891,6 +906,62 @@ ActionResult act_permissions(Session&, const Value& args) {
                 "it holds its own grant.\n";
     }
     return succeed(text, out);
+}
+
+ActionResult act_system(Session& s, const Value& args) {
+    if (!args.contains("action") || args["action"].is_null()) {
+        Value list = Value::array();
+        std::string text;
+        for (const auto& info : system_actions()) {
+            Value v = Value::object();
+            v.set("action", to_string(info.action));
+            v.set("supported", info.supported);
+            v.set("mechanism", info.mechanism);
+            if (!info.note.empty()) v.set("note", info.note);
+            list.push_back(v);
+
+            char buf[96];
+            std::snprintf(buf, sizeof(buf), "%-18s %-3s ", to_string(info.action),
+                          info.supported ? "ok" : "--");
+            text += buf;
+            text += info.mechanism.empty() ? "(none)" : info.mechanism;
+            text += "\n";
+            if (!info.note.empty()) text += "                      " + info.note + "\n";
+        }
+        Value out = Value::object();
+        out.set("actions", list);
+        return succeed(text, out);
+    }
+
+    auto which = system_action_from_string(args["action"].as_string());
+    if (!which) return fail(which.error());
+
+    const SystemActionInfo info = describe_system_action(which.value());
+    if (!info.supported) {
+        return fail(ErrorCode::Unsupported,
+                    std::string("'") + to_string(which.value()) + "' is not available here",
+                    info.note);
+    }
+
+    auto in = s.input();
+    if (!in) return fail(in.error());
+    auto sys = s.system();
+
+    if (auto st = perform_system_action(which.value(), *in.value(), sys ? sys.value() : nullptr);
+        !st) {
+        return fail(st.error());
+    }
+
+    Value v = Value::object();
+    v.set("action", to_string(which.value()));
+    v.set("mechanism", info.mechanism);
+    if (!info.note.empty()) v.set("note", info.note);
+    v.set("delivered", true);
+    v.set("verified", false);
+    return succeed(std::string("Sent ") + info.mechanism + " for " + to_string(which.value()) +
+                       ". The shortcut was delivered; whether the OS acted on it is not "
+                       "observable from a key event, so take a screenshot if it matters.",
+                   v);
 }
 
 ActionResult act_capabilities(Session& s, const Value&) {
@@ -1771,6 +1842,7 @@ ActionResult run(Session& session, std::string_view name, const Value& args) {
     // both treat a throw as fatal, and a bad JSON shape should be an error
     // response, not a crashed server.
     try {
+        if (name == "system") return act_system(session, args);
         if (name == "permissions") return act_permissions(session, args);
         if (name == "capabilities") return act_capabilities(session, args);
         if (name == "displays") return act_displays(session, args);

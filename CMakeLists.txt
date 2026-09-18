@@ -58,6 +58,7 @@ set(CC_CORE_SOURCES
   src/core/image_decode.cpp
   src/core/a11y_common.cpp
   src/core/permissions_common.cpp
+  src/core/system_ui_common.cpp
   src/core/text.cpp
   src/core/fuzzy.cpp
   src/core/session.cpp
@@ -80,6 +81,7 @@ if(CC_PLATFORM STREQUAL "macos")
     src/platform/macos/a11y_macos.mm
     src/platform/macos/system_macos.mm
     src/platform/macos/permissions_macos.mm
+    src/platform/macos/system_ui_macos.mm
   )
 elseif(CC_PLATFORM STREQUAL "windows")
   set(CC_PLATFORM_SOURCES
@@ -90,6 +92,7 @@ elseif(CC_PLATFORM STREQUAL "windows")
     src/platform/windows/a11y_windows.cpp
     src/platform/windows/system_windows.cpp
     src/platform/windows/permissions_windows.cpp
+    src/platform/windows/system_ui_windows.cpp
   )
 else()
   set(CC_PLATFORM_SOURCES
@@ -100,6 +103,7 @@ else()
     src/platform/linux/a11y_linux.cpp
     src/platform/linux/system_linux.cpp
     src/platform/linux/permissions_linux.cpp
+    src/platform/linux/system_ui_linux.cpp
   )
 endif()
 
@@ -147,6 +151,7 @@ if(CC_PLATFORM STREQUAL "macos")
     src/platform/macos/a11y_macos.mm
     src/platform/macos/system_macos.mm
     src/platform/macos/permissions_macos.mm
+    src/platform/macos/system_ui_macos.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
   foreach(fw CoreGraphics CoreFoundation ApplicationServices Foundation AppKit
              ScreenCaptureKit CoreMedia CoreVideo IOKit)

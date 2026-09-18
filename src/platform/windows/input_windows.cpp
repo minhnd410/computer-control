@@ -31,6 +31,7 @@
 #include <thread>
 #include <vector>
 #include "cc/input.hpp"
+#include "cc/system_ui.hpp"
 #include "core/motion.hpp"
 
 namespace cc {
@@ -503,6 +504,23 @@ public:
         s.note =
             "Real synthesized touch contacts; the compositor and the target application "
             "both see genuine multi-touch.";
+
+        // Be honest about the one case that does not go through touch
+        // injection at all.
+        if ((kind == GestureKind::Swipe || kind == GestureKind::EdgeSwipe) && fingers >= 3) {
+            s.fidelity = GestureFidelity::Emulated;
+            s.backend = "shell-shortcuts";
+            s.note =
+                "A 3+ finger swipe is a touchpad gesture, interpreted by the Precision "
+                "Touchpad driver from HID reports. Injected contacts are touchscreen input "
+                "and go to the window underneath, never to the shell, so this maps to the "
+                "shortcuts that driver invokes: 4 fingers switch virtual desktops "
+                "(win+ctrl+arrow), 3 fingers switch apps (alt+tab), up opens Task View "
+                "(win+tab), down shows the desktop (win+d). Set require_native for real "
+                "contacts delivered to the application instead.";
+            return s;
+        }
+
         if (fingers > kMaxContacts) {
             s.fidelity = GestureFidelity::Unsupported;
             s.note = "At most 10 simultaneous contacts.";
@@ -510,7 +528,34 @@ public:
         return s;
     }
 
+    // See gesture_support: a multi-finger swipe cannot be produced by touch
+    // injection, so it routes to the shortcuts the touchpad driver invokes.
+    // Finger counts follow the Windows 11 defaults - three switch apps, four
+    // switch virtual desktops - and direction follows the touchpad, where
+    // content tracks the fingers.
+    bool is_shell_swipe(const GestureRequest& req) const {
+        return (req.kind == GestureKind::Swipe || req.kind == GestureKind::EdgeSwipe) &&
+               req.fingers >= 3 && !req.require_native;
+    }
+
+    Status shell_swipe(const GestureRequest& req) {
+        SystemAction action = SystemAction::Overview;
+        if (req.direction == SwipeDirection::Up) {
+            action = SystemAction::Overview;
+        } else if (req.direction == SwipeDirection::Down) {
+            action = SystemAction::ShowDesktop;
+        } else if (req.fingers >= 4) {
+            action = (req.direction == SwipeDirection::Left) ? SystemAction::NextDesktop
+                                                             : SystemAction::PreviousDesktop;
+        } else {
+            action = SystemAction::AppSwitcher;
+        }
+        return perform_system_action(action, *this, nullptr);
+    }
+
     Status gesture(const GestureRequest& req) override {
+        if (is_shell_swipe(req)) return shell_swipe(req);
+
         const auto support = gesture_support(req.kind, req.fingers);
         if (support.fidelity == GestureFidelity::Unsupported) {
             return err(ErrorCode::Unsupported, "gesture unavailable: " + support.note);

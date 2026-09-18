@@ -868,15 +868,19 @@ private:
     }
 
     Status gesture_spaces_swipe(const GestureRequest& req) {
-        // Three- and four-finger swipes are system gestures on macOS: left and
-        // right move between Spaces, up opens Mission Control, down shows App
-        // Exposé. Their keyboard equivalents produce the identical system
-        // response, which is what the caller actually wants.
+        // Three- and four-finger swipes are system gestures on macOS: they move
+        // between Spaces, open Mission Control, or show App Exposé. Their
+        // keyboard equivalents produce the identical system response.
+        //
+        // The direction mapping follows the trackpad, where content tracks the
+        // fingers: swiping *left* pulls the next Space in from the right, which
+        // is ctrl+Right. Mapping left to ctrl+Left - the obvious-looking
+        // choice - moves the wrong way.
         Chord c;
         c.modifiers = Modifier::Control;
         switch (req.direction) {
-            case SwipeDirection::Left: c.keys.push_back(Key::Left); break;
-            case SwipeDirection::Right: c.keys.push_back(Key::Right); break;
+            case SwipeDirection::Left: c.keys.push_back(Key::Right); break;
+            case SwipeDirection::Right: c.keys.push_back(Key::Left); break;
             case SwipeDirection::Up: c.keys.push_back(Key::Up); break;
             case SwipeDirection::Down: c.keys.push_back(Key::Down); break;
         }
