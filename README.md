@@ -371,6 +371,16 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 
 ---
 
+## Documentation
+
+| | |
+|---|---|
+| [Coordinate spaces](docs/coordinate-spaces.md) | Logical vs physical vs image, mixed-DPI, device points. Read this one. |
+| [JSON schema](docs/json-schema.md) | The shape of every JSON payload the C ABI and MCP tools return. |
+| [Tool comparison](docs/tool-comparison.md) | What carried over from Windows-MCP and macOS-MCP, what was dropped, and why. |
+| [CLAUDE.md](CLAUDE.md) | Architecture and the invariants that break subtly. |
+| [Docker notes](docker/README.md) | What the container can and cannot do. |
+
 ## Prior art
 
 The tool surface is a superset of [Windows-MCP](https://github.com/CursorTouch/Windows-MCP) and [macOS-MCP](https://github.com/CursorTouch/MacOS-MCP), both MIT-licensed and worth reading. This project differs in being a single C++ core across three desktop platforms with an explicit coordinate-space model, honest gesture-fidelity reporting, and mobile-device support.

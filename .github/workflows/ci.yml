@@ -75,6 +75,7 @@ jobs:
             build/Release/*.exe
             build/Release/*.dll
             build/Release/*.lib
+            build/Release/*.pdb
           if-no-files-found: warn
           retention-days: 14
 

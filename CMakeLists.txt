@@ -200,7 +200,17 @@ set(CC_ALL_SOURCES ${CC_CORE_SOURCES} ${CC_PLATFORM_SOURCES})
 add_library(cc_static STATIC ${CC_ALL_SOURCES})
 target_link_libraries(cc_static PUBLIC cc_config)
 cc_apply_build_flags(cc_static)
-set_target_properties(cc_static PROPERTIES OUTPUT_NAME computer_control)
+# On Unix the two libraries coexist as libcomputer_control.a and
+# libcomputer_control.so. On Windows they would both want
+# computer_control.lib - the static archive and the DLL's *import* library -
+# and one silently overwrites the other. When the import library wins, linking
+# cc_static resolves only the dllexported C ABI and every C++ symbol comes back
+# as an unresolved external, with nothing in the build output to explain it.
+if(WIN32)
+  set_target_properties(cc_static PROPERTIES OUTPUT_NAME computer_control_static)
+else()
+  set_target_properties(cc_static PROPERTIES OUTPUT_NAME computer_control)
+endif()
 add_library(cc::static ALIAS cc_static)
 
 if(CC_BUILD_SHARED)

@@ -53,7 +53,24 @@ RUN ldconfig
 # root. The uinput group matches the common host gid so `--device /dev/uinput`
 # works without extra flags on most distributions.
 RUN groupadd -g 995 uinput || true \
- && useradd -m -s /bin/bash -G uinput automation
+ && useradd -m -s /bin/bash -G uinput automation \
+ # Xvfb wants to create /tmp/.X11-unix itself and cannot as a non-root user,
+ # which prints an alarming "euid != 0" error even though the server then
+ # starts fine over the abstract socket. Creating it up front keeps the logs
+ # honest.
+ && mkdir -p /tmp/.X11-unix \
+ && chmod 1777 /tmp/.X11-unix
+
+# openbox looks for the Debian menu at a fixed path and logs a warning on every
+# start when it is missing; the package that supplies it drags in a large
+# dependency tree. An empty menu is the right answer for a headless container.
+# This has to happen while still root - /var/lib is not writable afterwards.
+RUN mkdir -p /var/lib/openbox /home/automation/.config/openbox \
+ && printf '<?xml version="1.0" encoding="UTF-8"?>\n<openbox_menu/>\n' \
+      | tee /var/lib/openbox/debian-menu.xml \
+            /home/automation/.config/openbox/menu.xml > /dev/null \
+ && chown -R automation:automation /home/automation/.config
+
 USER automation
 WORKDIR /home/automation
 
@@ -63,6 +80,9 @@ ENV DISPLAY=:99 \
     CC_HOST=0.0.0.0 \
     CC_PORT=8765
 
+# openbox logs a warning on every start when the Debian menu file is absent
+# and the package that provides it pulls in a large dependency tree. An empty
+# menu is the right answer for a headless container.
 COPY --chown=automation:automation docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 EXPOSE 8765
