@@ -23,7 +23,9 @@ jobs:
           - { name: "Linux (gcc)",    os: ubuntu-latest,  preset: "" }
           - { name: "Linux (clang)",  os: ubuntu-latest,  preset: "-DCMAKE_CXX_COMPILER=clang++" }
           - { name: "macOS (arm64)",  os: macos-latest,   preset: "" }
-          - { name: "macOS (x86_64)", os: macos-13,       preset: "" }
+          # macos-13 is being retired and its runners queue indefinitely;
+          # macos-15-intel is the current x86_64 image.
+          - { name: "macOS (x86_64)", os: macos-15-intel, preset: "" }
           - { name: "Windows (msvc)", os: windows-latest, preset: "" }
 
     steps:

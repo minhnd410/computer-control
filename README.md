@@ -1,5 +1,10 @@
 # computer-control
 
+[![CI](https://github.com/minhnd410/computer-control/actions/workflows/ci.yml/badge.svg)](https://github.com/minhnd410/computer-control/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
+
 **One C++ core for driving a desktop — and the phones on it.** macOS, Windows and Linux, plus iOS simulators, Android emulators and mirrored handsets, behind a single API that ships as a native library, a stable C ABI, a CLI, and an MCP server.
 
 ```bash
@@ -224,7 +229,9 @@ Over HTTP on loopback, with a bearer token:
 CC_AUTH_TOKEN=$(openssl rand -hex 16) computer-control-mcp --transport http --port 8765
 ```
 
-29 tools are exposed. `capabilities` first, then `snapshot` to get numbered elements, then act on them by label rather than by pixel. `batch` runs a predictable sequence in one round trip, which is usually the difference between a snappy agent and a sluggish one.
+30 tools exist; 29 are advertised by default, because `registry` stays hidden unless you pass `--allow-registry`. A tool that is switched off is not listed at all rather than listed and refusing, so the model's attention is not spent on it.
+
+`capabilities` first, then `snapshot` to get numbered elements, then act on them by label rather than by pixel. `batch` runs a predictable sequence in one round trip, which is usually the difference between a snappy agent and a sluggish one.
 
 ---
 

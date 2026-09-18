@@ -30,7 +30,8 @@ TRANSPORT
 TOOLS
   --tools a,b,c              Enable only these tools.
   --exclude-tools a,b        Disable these tools.
-  --list-tools               Print the tool names and exit.
+  --list-tools               Print every tool name and exit, noting which are
+                             hidden by the current safety flags.
 
 SAFETY
   --no-shell                 Refuse the shell tool. Recommended when the
@@ -112,7 +113,17 @@ int main(int argc, char** argv) {
                       << b.compiler << ")\n";
             return 0;
         } else if (arg == "--list-tools") {
-            for (const auto& t : cc::actions::registry()) std::cout << t.name << "\n";
+            // The whole registry, including tools that are gated off by
+            // default, so the flag answers "what exists" rather than "what
+            // would this particular invocation advertise".
+            for (const auto& t : cc::actions::registry()) {
+                const std::string name = t.name;
+                std::cout << name;
+                if (name == "registry") std::cout << "  (hidden unless --allow-registry)";
+                if (name == "shell") std::cout << "  (hidden by --no-shell)";
+                if (name == "clipboard") std::cout << "  (hidden by --no-clipboard)";
+                std::cout << "\n";
+            }
             return 0;
         } else if (arg == "--transport")
             cfg.transport = next("stdio or http");
