@@ -95,50 +95,36 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Core object library (compiled once, reused by static, shared, CLI and MCP)
+# Shared build settings
 # ---------------------------------------------------------------------------
-add_library(cc_objects OBJECT ${CC_CORE_SOURCES} ${CC_PLATFORM_SOURCES})
+# An INTERFACE target carries the include paths, definitions, warnings and
+# system libraries, and the real targets compile the sources directly.
+#
+# This deliberately compiles the sources twice rather than sharing an OBJECT
+# library. $<TARGET_OBJECTS:...> is subtly generator-dependent - on the Visual
+# Studio generator a static library built only from an object expression links
+# to an empty archive, which shows up much later as dozens of unresolved
+# externals with no compile error to explain them. A second compile costs about
+# a minute; that failure mode costs an afternoon.
+add_library(cc_config INTERFACE)
 
-target_include_directories(cc_objects PUBLIC
+target_include_directories(cc_config INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:include>)
 
-target_compile_definitions(cc_objects PUBLIC
+target_compile_definitions(cc_config INTERFACE
   CC_VERSION="${PROJECT_VERSION}"
   CC_PLATFORM_NAME="${CC_PLATFORM}")
 
 if(CC_USE_SYSTEM_ZLIB)
   find_package(ZLIB QUIET)
   if(ZLIB_FOUND)
-    target_compile_definitions(cc_objects PRIVATE CC_HAVE_ZLIB=1)
-    target_link_libraries(cc_objects PUBLIC ZLIB::ZLIB)
+    target_compile_definitions(cc_config INTERFACE CC_HAVE_ZLIB=1)
+    target_link_libraries(cc_config INTERFACE ZLIB::ZLIB)
     message(STATUS "computer-control: using system zlib")
   else()
     message(STATUS "computer-control: system zlib not found, using the bundled deflate")
-  endif()
-endif()
-
-# --- warnings and optimisation ---
-if(MSVC)
-  target_compile_options(cc_objects PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8 /bigobj)
-  target_compile_definitions(cc_objects PRIVATE
-    NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
-  target_compile_options(cc_objects PRIVATE $<$<CONFIG:Release>:/O2 /Oi /Gy>)
-else()
-  target_compile_options(cc_objects PRIVATE
-    -Wall -Wextra -Wpedantic -Wno-unused-parameter -Wno-missing-field-initializers)
-  target_compile_options(cc_objects PRIVATE $<$<CONFIG:Release>:-O3 -fno-math-errno>)
-  if(CC_ENABLE_NATIVE)
-    target_compile_options(cc_objects PRIVATE -march=native)
-  endif()
-endif()
-
-if(CC_ENABLE_LTO)
-  include(CheckIPOSupported)
-  check_ipo_supported(RESULT CC_IPO_OK OUTPUT CC_IPO_MSG)
-  if(CC_IPO_OK)
-    set_property(TARGET cc_objects PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
   endif()
 endif()
 
@@ -152,60 +138,127 @@ if(CC_PLATFORM STREQUAL "macos")
     src/platform/macos/a11y_macos.mm
     src/platform/macos/system_macos.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-  foreach(fw CoreGraphics CoreFoundation ApplicationServices Foundation AppKit ScreenCaptureKit CoreMedia CoreVideo IOKit)
+  foreach(fw CoreGraphics CoreFoundation ApplicationServices Foundation AppKit
+             ScreenCaptureKit CoreMedia CoreVideo IOKit)
     find_library(CC_FW_${fw} ${fw} REQUIRED)
-    target_link_libraries(cc_objects PUBLIC ${CC_FW_${fw}})
+    target_link_libraries(cc_config INTERFACE ${CC_FW_${fw}})
   endforeach()
 elseif(CC_PLATFORM STREQUAL "windows")
-  target_link_libraries(cc_objects PUBLIC
+  target_link_libraries(cc_config INTERFACE
     user32 gdi32 shcore dwmapi ole32 oleaut32 uuid shell32 advapi32
-    windowsapp comctl32 psapi version)
+    windowsapp comctl32 psapi version ws2_32)
+  target_compile_definitions(cc_config INTERFACE
+    NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
 else()
   find_package(X11)
   if(X11_FOUND)
-    target_compile_definitions(cc_objects PRIVATE CC_HAVE_X11=1)
-    target_include_directories(cc_objects PRIVATE ${X11_INCLUDE_DIR})
-    target_link_libraries(cc_objects PUBLIC ${X11_LIBRARIES})
+    target_compile_definitions(cc_config INTERFACE CC_HAVE_X11=1)
+    target_include_directories(cc_config INTERFACE ${X11_INCLUDE_DIR})
+    target_link_libraries(cc_config INTERFACE ${X11_LIBRARIES})
     if(X11_XTest_LIB)
-      target_compile_definitions(cc_objects PRIVATE CC_HAVE_XTEST=1)
-      target_link_libraries(cc_objects PUBLIC ${X11_XTest_LIB})
+      target_compile_definitions(cc_config INTERFACE CC_HAVE_XTEST=1)
+      target_link_libraries(cc_config INTERFACE ${X11_XTest_LIB})
     endif()
     if(X11_Xrandr_LIB)
-      target_compile_definitions(cc_objects PRIVATE CC_HAVE_XRANDR=1)
-      target_link_libraries(cc_objects PUBLIC ${X11_Xrandr_LIB})
+      target_compile_definitions(cc_config INTERFACE CC_HAVE_XRANDR=1)
+      target_link_libraries(cc_config INTERFACE ${X11_Xrandr_LIB})
     endif()
     if(X11_Xfixes_LIB)
-      target_compile_definitions(cc_objects PRIVATE CC_HAVE_XFIXES=1)
-      target_link_libraries(cc_objects PUBLIC ${X11_Xfixes_LIB})
+      target_compile_definitions(cc_config INTERFACE CC_HAVE_XFIXES=1)
+      target_link_libraries(cc_config INTERFACE ${X11_Xfixes_LIB})
     endif()
   else()
     message(WARNING "X11 not found: the Linux build will only support the uinput and "
                     "portal paths, and screen capture will be unavailable.")
   endif()
   find_package(Threads REQUIRED)
-  target_link_libraries(cc_objects PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+  target_link_libraries(cc_config INTERFACE Threads::Threads ${CMAKE_DL_LIBS})
 endif()
+
+# Applies the warning and optimisation settings to a real (non-interface)
+# target. Warnings cannot live on cc_config because INTERFACE compile options
+# would also be forced on anything that links the library.
+function(cc_apply_build_flags target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8 /bigobj)
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:/O2 /Oi /Gy>)
+  else()
+    target_compile_options(${target} PRIVATE
+      -Wall -Wextra -Wpedantic -Wno-unused-parameter -Wno-missing-field-initializers)
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:-O3 -fno-math-errno>)
+    if(CC_ENABLE_NATIVE)
+      target_compile_options(${target} PRIVATE -march=native)
+    endif()
+  endif()
+endfunction()
 
 # ---------------------------------------------------------------------------
 # Libraries
 # ---------------------------------------------------------------------------
-add_library(cc_static STATIC $<TARGET_OBJECTS:cc_objects>)
-target_link_libraries(cc_static PUBLIC cc_objects)
+set(CC_ALL_SOURCES ${CC_CORE_SOURCES} ${CC_PLATFORM_SOURCES})
+
+add_library(cc_static STATIC ${CC_ALL_SOURCES})
+target_link_libraries(cc_static PUBLIC cc_config)
+cc_apply_build_flags(cc_static)
 set_target_properties(cc_static PROPERTIES OUTPUT_NAME computer_control)
 add_library(cc::static ALIAS cc_static)
 
 if(CC_BUILD_SHARED)
-  add_library(cc_shared SHARED $<TARGET_OBJECTS:cc_objects>)
-  target_link_libraries(cc_shared PUBLIC cc_objects)
+  add_library(cc_shared SHARED ${CC_ALL_SOURCES})
+  target_link_libraries(cc_shared PUBLIC cc_config)
+  cc_apply_build_flags(cc_shared)
+  # Only the shared build exports the C ABI; defining this for the static
+  # build would mark every entry point dllexport in a .lib, which is wrong.
+  target_compile_definitions(cc_shared PRIVATE CC_BUILDING_SHARED=1)
   set_target_properties(cc_shared PROPERTIES
     OUTPUT_NAME computer_control
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
     C_VISIBILITY_PRESET hidden
     CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON)
-  target_compile_definitions(cc_objects PRIVATE CC_BUILDING_SHARED=1)
+    VISIBILITY_INLINES_HIDDEN ON
+    WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   add_library(cc::shared ALIAS cc_shared)
+endif()
+
+# Link-time optimization.
+#
+# check_ipo_supported() is necessary but not sufficient: it compiles a trivial
+# program, which can succeed while a real link fails. The common breakage is
+# Clang on Linux emitting bitcode newer than the system linker's LLVM plugin
+# understands ("Unknown attribute kind", because ld.bfd's gold plugin is built
+# against a different LLVM than the clang in PATH). LTO here buys a few percent
+# on a library whose cost is dominated by OS calls and image encoding, so a
+# broken default build is a much worse trade than the lost speed - detect the
+# hazard and step down instead of failing.
+if(CC_ENABLE_LTO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT CC_IPO_OK OUTPUT CC_IPO_MSG)
+
+  if(CC_IPO_OK AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT APPLE)
+    find_program(CC_LLD_PROGRAM NAMES lld ld.lld)
+    if(CC_LLD_PROGRAM)
+      target_link_options(cc_static PUBLIC -fuse-ld=lld)
+      if(TARGET cc_shared)
+        target_link_options(cc_shared PUBLIC -fuse-ld=lld)
+      endif()
+      message(STATUS "computer-control: LTO enabled, linking with lld")
+    else()
+      set(CC_IPO_OK OFF)
+      message(STATUS "computer-control: LTO disabled - Clang on Linux needs lld to link "
+                     "its bitcode reliably, and lld was not found. Install lld, or pass "
+                     "-DCC_ENABLE_LTO=OFF to silence this.")
+    endif()
+  endif()
+
+  if(CC_IPO_OK)
+    set_property(TARGET cc_static PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    if(TARGET cc_shared)
+      set_property(TARGET cc_shared PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
+  else()
+    message(STATUS "computer-control: building without LTO")
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------
