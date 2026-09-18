@@ -48,19 +48,18 @@ Desktop automation tools tend to pick one platform, one language, and one level 
 
 The single most common bug in this space is reading a pixel off a Retina screenshot and clicking it as if it were a point. Every coordinate here carries a space — `logical`, `physical`, or `image` — and conversion resolves against the display that contains it, so mixed-DPI multi-monitor setups convert per display rather than with one global factor.
 
-![Coordinate spaces](docs/media/coordinates.gif)
+On a 1440x900 @2x display captured down to 1000 px wide, a button at (500, 300)
+in that image is at (720, 432) logical. Clicking the raw pixel misses by 220
+points. Pass it back as `{"x":500,"y":300,"space":"image"}` and it is converted
+for you.
 
 ### Fidelity is reported, not faked
 
 Windows and Linux can synthesize genuine multi-touch. macOS cannot — there is no public API for it. Instead of silently substituting something that looks similar, `capabilities` tells you whether each gesture is `native`, `emulated`, or `unsupported`, names the backend, and explains the substitution. `require_native` refuses emulation outright.
 
-![Gesture fidelity](docs/media/gestures.gif)
-
 ### Errors carry a remedy
 
 Every failure names the exact next step — the settings pane, the package, the udev rule. The macOS permission model in particular is genuinely confusing: a grant belongs to the *responsible process*, so a CLI started from a terminal is attributed to the terminal, never appears in System Settings, and cannot prompt for itself. The tool says so rather than returning an empty result.
-
-![Permission diagnosis](docs/media/permissions.gif)
 
 The server speaks the current revision, **2026-07-28**, and falls back to **2025-06-18** for clients that have not caught up — which today is most of them. A modern request is served statelessly with no handshake; an `initialize` still works. See [protocol revisions](docs/mcp.md#protocol-revisions).
 
@@ -124,26 +123,23 @@ Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), 
 
 ## Install
 
-Download the archive for your platform from
-[Releases](https://github.com/minhnd410/computer-control/releases), or build
-it. Details: **[docs/install.md](docs/install.md)**.
+Build from source — there is no published release yet. Details:
+**[docs/install.md](docs/install.md)**.
 
 ```bash
-# macOS (Apple silicon) — see the docs for other platforms and checksum verification
-curl -fsSLO https://github.com/minhnd410/computer-control/releases/latest/download/computer-control-macos-arm64.tar.gz
-tar -xzf computer-control-macos-arm64.tar.gz
-sudo mv computer-control/computer-control-mcp /usr/local/bin/
-computer-control-mcp --request-permissions
-
-# or from source
+git clone https://github.com/minhnd410/computer-control.git
+cd computer-control
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+./build/computer-control-mcp --request-permissions
 ```
 
-> **Coming soon, not available:** Homebrew, winget, `uvx`, and `curl | sh`. The
-> scaffolding is in [`packaging/`](packaging); nothing is published to a tap,
-> a manifest repository or an index yet. The release archives are also
-> unsigned — on macOS that means Gatekeeper quarantine, and an Accessibility
-> grant that does not survive an upgrade.
+Then point your client at `build/computer-control-mcp`, or copy it onto your
+`PATH`.
+
+> **Not available yet:** prebuilt binaries, Homebrew, winget, `uvx`, and
+> `curl | sh`. The release pipeline and the packaging scaffolding are in
+> [`.github/workflows/release.yml`](.github/workflows/release.yml) and
+> [`packaging/`](packaging); nothing is tagged or published.
 
 **Claude Code in WSL:** install the **Windows** build and have WSL launch it. A Linux binary inside WSL cannot control Windows — WSLg is one-directional. See [docs/wsl.md](docs/wsl.md).
 
@@ -228,7 +224,6 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 | [Coordinate spaces](docs/coordinate-spaces.md) | Logical vs physical vs image, mixed DPI, device points. |
 | [JSON schema](docs/json-schema.md) | Every JSON payload the MCP tools return. |
 | [Tool comparison](docs/tool-comparison.md) | What came from Windows-MCP and macOS-MCP, and what did not. |
-| [tools/make_demo_gif.py](tools/make_demo_gif.py) | Regenerates the GIFs above from real command output. |
 
 ---
 

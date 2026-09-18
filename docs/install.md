@@ -1,44 +1,14 @@
 <!-- Split out of the README; see the table of contents there. -->
 # Installation
 
-Two ways to install today. Everything else is listed at the bottom as planned,
-not available.
+Build from source. Nothing is published yet — the bottom of this page lists
+what is planned and what is missing for each.
 
-## Download a release
-
-Every tag is built by CI for macOS, Windows and Linux, and the archives are
-attached to the [release](https://github.com/minhnd410/computer-control/releases).
-Nothing is uploaded by hand, so what you download is what CI built from that tag.
-
-```bash
-# macOS (Apple silicon) — swap macos-arm64 for your platform
-BASE=https://github.com/minhnd410/computer-control/releases/latest/download
-curl -fsSLO "$BASE/computer-control-macos-arm64.tar.gz"
-curl -fsSLO "$BASE/computer-control-macos-arm64.tar.gz.sha256"
-shasum -a 256 -c computer-control-macos-arm64.tar.gz.sha256   # or sha256sum -c
-tar -xzf computer-control-macos-arm64.tar.gz
-sudo mv computer-control/computer-control-mcp /usr/local/bin/
-computer-control-mcp --request-permissions   # grant, then report
-```
-
-| Platform | Archive |
-|---|---|
-| macOS, Apple silicon | `computer-control-macos-arm64.tar.gz` |
-| macOS, Intel | `computer-control-macos-x86_64.tar.gz` |
-| Linux, x86_64 | `computer-control-linux-x86_64.tar.gz` |
-| Windows, x86_64 | `computer-control-windows-x86_64.zip` |
-
-The checksum step is not decoration: this is a binary that can drive your
-desktop. Keep the archive's original filename, since that is the name recorded
-in the `.sha256`.
-
-Linux on arm64 has no prebuilt archive; build from source.
-
-**The archives are not code-signed or notarised.** On macOS, Gatekeeper
-quarantines them (`xattr -d com.apple.quarantine cc` clears it), and — more
-importantly — an unsigned binary's TCC identity is its code hash, so the
-Accessibility grant does not survive an upgrade. If you want the grant to
-stick, build from source and sign it. See [permissions](permissions.md).
+> **No release is published.** There are no prebuilt binaries to download
+> today, so building from source is the only way to install. The pipeline
+> exists (`.github/workflows/release.yml`) and attaches archives with SHA256
+> checksums for macOS, Windows and Linux the moment a `v*` tag is pushed. The
+> archives it produces are **not** code-signed or notarised.
 
 ## Build from source
 
@@ -81,6 +51,7 @@ manifest, and a package index entry.
 
 | | Status |
 |---|---|
+| Prebuilt binaries | The release workflow is written and tested end to end; no tag is currently published. |
 | `curl … \| sh` | Script exists in `packaging/scripts/install.sh`, untested against a real release. |
 | Homebrew | Formula written; no tap published. |
 | winget | Manifests written; not submitted to the community repository. |
