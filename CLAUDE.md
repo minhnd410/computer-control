@@ -96,12 +96,18 @@ observed.
 - When a platform is still unrun, keep it in the **"Not yet exercised by
   anyone"** list. Removing an item from that list is a claim; make it only when
   someone has actually run it.
+- **Rewriting a code path invalidates the row that covered it.** Windows was
+  listed as tested for PowerShell and multi-finger swipes; both turned out to
+  be broken and were replaced, so the row now says "before the current code"
+  and names what needs re-testing. A tested row is about a specific commit, not
+  a platform in perpetuity.
 - If a contributor reports running it somewhere new, add their row and credit
   them.
 
-Current state: macOS 26.6 on Apple silicon and Windows 11 have been
-maintainer-tested; Linux has been exercised under Xvfb in a container. The
-Linux `/dev/uinput` native-gesture path, macOS on Intel, and every non-Debian
+Current state: macOS 26.6 on Apple silicon is maintainer-tested and Linux has
+been exercised under Xvfb in a container. Windows 11 was tested only before the
+PowerShell and multi-finger-swipe rewrites, so it needs a re-test. The Linux
+`/dev/uinput` native-gesture path, macOS on Intel, and every non-Debian
 distribution are unrun.
 
 This also matters when reading the platform notes below: the macOS ones were

@@ -101,13 +101,17 @@ Maintainer-tested:
 
 | OS | Version | Tested by | Exercised |
 |---|---|---|---|
-| macOS | 26.6 (Tahoe), Apple silicon | maintainer | capture, pointer, clicks, drag, stroke, gestures, accessibility tree, permissions, launcher, simulator discovery |
-| Windows | 11 | maintainer | PowerShell, multi-finger swipe behaviour |
-| Linux | Debian 12 under Xvfb (container) | CI + maintainer | capture, pointer, clicks, Unicode typing, chords, emulated gestures |
+| macOS | 26.6 (Tahoe), Apple silicon | maintainer | capture, pointer, clicks, drag, stroke, gestures, accessibility tree, permissions, launcher, search, shell, simulator discovery |
+| Linux | Debian 12 under Xvfb (container) | CI + maintainer | capture, pointer, clicks, Unicode typing, chords, emulated gestures, permission reporting |
+| Windows | 11 | maintainer, **before the current code** | see below |
 
 Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), Linux (gcc + clang).
 
-**Not yet exercised by anyone:** the Linux `/dev/uinput` native-gesture path (needs a host with a writable uinput device), macOS on Intel, any BSD, and every non-Debian distribution.
+**Windows needs a re-test.** The two behaviours that were checked there — running a PowerShell script, and multi-finger trackpad swipes — both turned out to be broken, and both were rewritten. PowerShell now goes through `-EncodedCommand` because the old quoting mangled any script containing a double quote; multi-finger swipes now map to shell shortcuts because touch injection cannot produce a touchpad gesture at all. Neither rewrite has been run on Windows. If you have a Windows machine, this is the single most useful thing to try.
+
+**Not yet exercised by anyone:** the Windows backend since the rewrites above, the Linux `/dev/uinput` native-gesture path (needs a host with a writable uinput device), macOS on Intel, any BSD, and every non-Debian distribution.
+
+**Partially verified:** on macOS, `system --action overview` and the desktop-switching actions deliver their shortcuts correctly, but no effect was observable in a capture on the test machine, so they are not claimed as working. `cc system` reports what it *sent*, never what the OS did with it.
 
 **Please help.** If you run this anywhere not in that table — another Windows build, a KDE or Wayland session, an Intel Mac, a Raspberry Pi, a physical Android phone over scrcpy — [open an issue](https://github.com/minhnd410/computer-control/issues) with the output of `cc doctor`. That is a genuinely useful contribution even if you change no code, and it is how the table above grows. See [CONTRIBUTING](CONTRIBUTING.md).
 
