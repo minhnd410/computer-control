@@ -162,7 +162,6 @@ std::string Session::capability_report() {
     root.set("version", bi.version);
     root.set("platform", bi.platform);
     root.set("compiler", bi.compiler);
-    root.set("abi", 1);
 
     json::Value disp = json::Value::array();
     if (displays_) {

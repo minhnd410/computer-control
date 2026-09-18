@@ -54,22 +54,27 @@ jobs:
       - name: Smoke test
         shell: bash
         run: |
-          BIN=build/cc
-          [ -f build/Release/cc.exe ] && BIN=build/Release/cc.exe
-          "$BIN" --version
           MCP=build/computer-control-mcp
           [ -f build/Release/computer-control-mcp.exe ] && MCP=build/Release/computer-control-mcp.exe
           "$MCP" --version
           "$MCP" --list-tools > /dev/null
+          # A release binary that cannot answer a tools/list is broken in a way
+          # a --version check would not catch.
+          echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
+            | "$MCP" | grep -q '"tools"'
 
       - name: Package
         shell: bash
         run: |
           mkdir -p dist/computer-control
-          if [ -f build/Release/cc.exe ]; then
-            cp build/Release/cc.exe build/Release/computer-control-mcp.exe dist/computer-control/
+          # Only the MCP server ships. The `cc` CLI mirrors the same action
+          # registry and adds no capability, so shipping it would mean two
+          # binaries to install, sign and explain for one job. It stays in the
+          # repository as the contributor debugging tool.
+          if [ -f build/Release/computer-control-mcp.exe ]; then
+            cp build/Release/computer-control-mcp.exe dist/computer-control/
           else
-            cp build/cc build/computer-control-mcp dist/computer-control/
+            cp build/computer-control-mcp dist/computer-control/
           fi
           cp LICENSE README.md dist/computer-control/
           cd dist

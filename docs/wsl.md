@@ -71,7 +71,7 @@ then `wsl --shutdown` from PowerShell and reopen.
 ## Things that will catch you out
 
 **Paths cross a boundary.** The server is a Windows process, so every path it
-receives or returns is a Windows path. `cc screenshot --out /home/you/s.png`
+receives or returns is a Windows path. a `screenshot` tool call writing to `/home/you/s.png`
 writes to `C:\home\you\s.png` on the Windows filesystem, not your WSL home.
 Translate with `wslpath`:
 

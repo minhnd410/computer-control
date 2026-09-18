@@ -168,7 +168,7 @@ DEMOS = {
         74,
         [
             ("# which gestures are real here, and what the rest fall back to", None),
-            ("cc capabilities", ["sh", "tools/demos/gestures.sh"]),
+            ("computer-control-mcp --doctor", ["sh", "tools/demos/gestures.sh"]),
         ],
     ),
     "coordinates": (
@@ -182,7 +182,7 @@ DEMOS = {
         84,
         [
             ("# why the binary never appears in System Settings", None),
-            ("cc permissions", ["sh", "tools/demos/permissions.sh"]),
+            ("computer-control-mcp --doctor", ["sh", "tools/demos/permissions.sh"]),
         ],
     ),
 }

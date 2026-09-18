@@ -8,8 +8,8 @@ The OS gates this deliberately. Each platform fails in its own way, and every er
 Run this first — it tells you exactly what is wrong and how to fix it:
 
 ```bash
-cc permissions            # what the OS is allowing
-cc permissions --request  # prompt for anything missing, and open the right pane
+computer-control-mcp --doctor                # what the OS is allowing
+computer-control-mcp --request-permissions   # prompt for anything missing, then report
 ```
 
 Two grants are needed, both under **System Settings → Privacy & Security**:
@@ -29,7 +29,7 @@ macOS attributes a permission to the **responsible process**, not to the binary 
 2. The permission prompt never fires — `AXIsProcessTrusted()` already returns true because the terminal is granted, and macOS only prompts a process it considers untrusted.
 3. That inherited grant covers the *trust check* but not always real inspection. You get `AXIsProcessTrusted() == true` while every window comes back as an empty placeholder.
 
-`cc permissions` detects all three and names the owner:
+`computer-control-mcp --doctor` detects all three and names the owner:
 
 ```
 Permissions for this process are attributed to iTerm2, not to the binary
@@ -40,7 +40,7 @@ does not appear in System Settings.
 
 Two ways to fix it:
 
-- **Add the binary by hand.** In the Accessibility list, click **+** and select the exact path `cc permissions` printed. Restart the process.
+- **Add the binary by hand.** In the Accessibility list, click **+** and select the exact path `--doctor` printed. Restart the process.
 - **Use the app bundle** (better, because the grant survives rebuilds):
 
   ```bash
@@ -48,7 +48,7 @@ Two ways to fix it:
   open -n build/computer-control.app --args permissions --request
   ```
 
-  A bundle launched through LaunchServices is its own responsible process, so it prompts properly and appears in the list as **computer-control**, where you can enable it. Running the binary inside the bundle directly from a shell does *not* do this — it is a child of the shell again, and `cc permissions` will say so.
+  A bundle launched through LaunchServices is its own responsible process, so it prompts properly and appears in the list as **computer-control**, where you can enable it. Running the binary inside the bundle directly from a shell does *not* do this — it is a child of the shell again, and `--doctor` will say so.
 
 **Signing matters for persistence.** An ad-hoc signature is keyed to the code hash, so every rebuild is a new identity and the grant is lost. Pass a real certificate to keep it:
 

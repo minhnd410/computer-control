@@ -5,14 +5,19 @@
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
 
-**An MCP server for driving a desktop — and the phones on it.** macOS, Windows and Linux, plus iOS simulators, Android emulators and mirrored handsets, on a single C++20 core. Ships as the MCP server, a `cc` CLI for debugging it, and a static library for embedding.
+**An MCP server for driving a desktop — and the phones on it.** macOS, Windows and Linux, plus iOS simulators, Android emulators and mirrored handsets, on a single C++20 core.
+
+One binary. Point an MCP client at it and the model gets 32 tools — capture,
+pointer, keyboard, multi-touch, windows, accessibility tree, phones.
+
+```json
+{ "mcpServers": { "computer-control": { "command": "computer-control-mcp" } } }
+```
 
 ```bash
-cc permissions --request                # ask the OS for what it needs
-cc screenshot --out screen.png          # capture, DPI-correct
-cc click --at 500,300@image             # click what you saw in that capture
-cc system --action launcher             # open the launcher, whatever it is this year
-cc device --mode tap --device "iPhone 15" --at 196,420
+computer-control-mcp --request-permissions   # grant what it needs, then report
+computer-control-mcp --doctor                # why is nothing happening?
+computer-control-mcp --list-tools
 ```
 
 ---
@@ -57,9 +62,7 @@ Every failure names the exact next step — the settings pane, the package, the 
 
 ![Permission diagnosis](docs/media/permissions.gif)
 
-MCP is the primary contract. The server speaks the current revision, **2026-07-28**, and falls back to **2025-06-18** for clients that have not caught up — which today is most of them. A modern request is served statelessly with no handshake; an `initialize` still works. See [protocol revisions](docs/mcp.md#protocol-revisions).
-
-The CLI is the same dispatcher behind an argv parser, which makes it the fastest way to debug a tool without a client attached — `cc snapshot --raw` is exactly what the `snapshot` tool returns.
+The server speaks the current revision, **2026-07-28**, and falls back to **2025-06-18** for clients that have not caught up — which today is most of them. A modern request is served statelessly with no handshake; an `initialize` still works. See [protocol revisions](docs/mcp.md#protocol-revisions).
 
 ---
 
@@ -95,7 +98,7 @@ The CLI is the same dispatcher behind an argv parser, which makes it the fastest
 - **Linux** creates a virtual multitouch touchscreen via `/dev/uinput`, which works on Wayland as well as X11. Without write access it falls back to XTest emulation.
 - **macOS** has no public multi-touch synthesis. Two-finger swipe and pan are genuinely native because `CGEvent` exposes trackpad scroll phases; pinch maps to `cmd`+scroll; rotation has no honest equivalent and is refused.
 
-Run `cc capabilities` for the live answer on any machine. For shell-level effects, prefer [`cc system`](docs/mcp.md) — it is both the reliable path and the fast one.
+The `capabilities` tool gives the live answer on any machine; `computer-control-mcp --doctor` prints the same report without a client. For shell-level effects prefer the [`system`](docs/mcp.md) tool — it is both the reliable path and the fast one.
 
 ### What has actually been tested
 
@@ -113,9 +116,9 @@ Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), 
 
 **Not yet exercised by anyone:** the Windows backend since the rewrites above, the Linux `/dev/uinput` native-gesture path (needs a host with a writable uinput device), macOS on Intel, any BSD, and every non-Debian distribution.
 
-**Partially verified:** on macOS, `system --action overview` and the desktop-switching actions deliver their shortcuts correctly, but no effect was observable in a capture on the test machine, so they are not claimed as working. `cc system` reports what it *sent*, never what the OS did with it.
+**Partially verified:** on macOS, `system --action overview` and the desktop-switching actions deliver their shortcuts correctly, but no effect was observable in a capture on the test machine, so they are not claimed as working. `system` reports what it *sent*, never what the OS did with it.
 
-**Please help.** If you run this anywhere not in that table — another Windows build, a KDE or Wayland session, an Intel Mac, a Raspberry Pi, a physical Android phone over scrcpy — [open an issue](https://github.com/minhnd410/computer-control/issues) with the output of `cc doctor`. That is a genuinely useful contribution even if you change no code, and it is how the table above grows. See [CONTRIBUTING](CONTRIBUTING.md).
+**Please help.** If you run this anywhere not in that table — another Windows build, a KDE or Wayland session, an Intel Mac, a Raspberry Pi, a physical Android phone over scrcpy — [open an issue](https://github.com/minhnd410/computer-control/issues) with the output of `computer-control-mcp --doctor`. That is a genuinely useful contribution even if you change no code, and it is how the table above grows. See [CONTRIBUTING](CONTRIBUTING.md).
 
 ---
 
@@ -126,18 +129,14 @@ Download the archive for your platform from
 it. Details: **[docs/install.md](docs/install.md)**.
 
 ```bash
-# macOS (Apple silicon) — see the docs for the other platforms
-curl -fsSL -o cc.tar.gz https://github.com/minhnd410/computer-control/releases/latest/download/computer-control-macos-arm64.tar.gz
-tar -xzf cc.tar.gz && sudo mv computer-control/cc computer-control/computer-control-mcp /usr/local/bin/
+# macOS (Apple silicon) — see the docs for other platforms and checksum verification
+curl -fsSLO https://github.com/minhnd410/computer-control/releases/latest/download/computer-control-macos-arm64.tar.gz
+tar -xzf computer-control-macos-arm64.tar.gz
+sudo mv computer-control/computer-control-mcp /usr/local/bin/
+computer-control-mcp --request-permissions
 
 # or from source
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
-```
-
-Then point your MCP client at it:
-
-```json
-{ "mcpServers": { "computer-control": { "command": "computer-control-mcp" } } }
 ```
 
 > **Coming soon, not available:** Homebrew, winget, `uvx`, and `curl | sh`. The
@@ -169,7 +168,7 @@ input->gesture(pinch);
 
 `Session` owns the backends and guarantees that everything held — mouse buttons, modifier keys, touch contacts — is released when it is destroyed, including on an exception path.
 
-There is no C ABI or Python binding any more; they were surface maintained for a use case this project does not have. To drive it from another language, run the CLI with `--raw` and parse the JSON, which is byte-for-byte what the MCP tool returns.
+There is no C ABI and no Python binding. To drive this from another language, speak MCP to the server, or build the `cc` CLI from source (`cmake --build build --target cc_cli`) and parse `--raw` JSON — it is byte-for-byte what the matching MCP tool returns. `cc` is a debugging and scripting tool for contributors; it is not shipped in the release archives, because it mirrors the same action registry and adds no capability.
 
 ---
 
@@ -197,7 +196,8 @@ src/platform/      macos/ (CGEvent, ScreenCaptureKit, AX)
                    linux/ (XTest, uinput, EWMH, AT-SPI2)
 src/devices/       Simulator, emulator and mirrored-device transports
 src/actions/       The shared action dispatcher: JSON in, JSON out
-src/mcp/ src/cli/  MCP server and the `cc` command
+src/mcp/           MCP server — the binary that ships
+src/cli/           `cc`, the same dispatcher behind argv; contributors only
 packaging/         Homebrew formula, winget manifests, install script (none published)
 ```
 
@@ -226,9 +226,8 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 | [Devices](docs/devices.md) | iOS simulators, Android emulators, mirrored handsets. |
 | [WSL](docs/wsl.md) | Why the server must run on the Windows side. |
 | [Coordinate spaces](docs/coordinate-spaces.md) | Logical vs physical vs image, mixed DPI, device points. |
-| [JSON schema](docs/json-schema.md) | Every JSON payload the MCP tools and `cc --raw` return. |
+| [JSON schema](docs/json-schema.md) | Every JSON payload the MCP tools return. |
 | [Tool comparison](docs/tool-comparison.md) | What came from Windows-MCP and macOS-MCP, and what did not. |
-| [examples/](examples/) | Runnable: capabilities, coordinate spaces, gestures, devices. |
 | [tools/make_demo_gif.py](tools/make_demo_gif.py) | Regenerates the GIFs above from real command output. |
 
 ---

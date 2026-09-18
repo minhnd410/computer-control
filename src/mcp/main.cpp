@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "actions/actions.hpp"
+#include "cc/permissions.hpp"
 #include "mcp/protocol.hpp"
 #include "mcp/server.hpp"
 
@@ -46,6 +47,16 @@ PROTOCOL
   Speaks MCP 2026-07-28, and falls back to 2025-06-18 for clients that open
   with an `initialize` handshake. No flag selects between them: the era is
   decided per request by how the client opens. `--version` prints both.
+
+DIAGNOSTICS
+  --doctor                   Print the permission and capability report and
+                             exit. Run this first when the server is connected
+                             but every tool seems to do nothing. Exits non-zero
+                             if a permission is missing.
+  --request-permissions      Ask the OS for anything missing, then --doctor.
+                             On macOS this is what puts the binary in the
+                             Accessibility list.
+  --list-tools               (see TOOLS)
 
 OTHER
   --prompt-permissions       Ask the OS for accessibility/recording access on
@@ -123,6 +134,34 @@ int main(int argc, char** argv) {
             for (const auto& v : cc::mcp::supported_versions()) std::cout << " " << v;
             std::cout << "\n";
             return 0;
+        } else if (arg == "--doctor" || arg == "--request-permissions") {
+            // A server that is running but doing nothing is almost always a
+            // permissions problem, and the client shows none of that. This is
+            // the same report the `permissions` and `capabilities` tools give,
+            // reachable without a client attached - which is why this binary
+            // is the only one an operator needs to install.
+            const bool request = (arg == "--request-permissions");
+            if (request) {
+                for (const auto& st : cc::check_permissions()) {
+                    if (st.state != cc::PermissionState::Granted &&
+                        st.state != cc::PermissionState::NotRequired) {
+                        cc::request_permission(st.permission);
+                    }
+                }
+            }
+            auto s = cc::Session::create(cfg.session);
+            if (!s) {
+                std::cerr << "Cannot start a session: " << s.error().message << "\n";
+                if (!s.error().remedy.empty()) std::cerr << "\n" << s.error().remedy << "\n";
+                return 1;
+            }
+            // Runs the real tools rather than a parallel report, so what an
+            // operator reads here is exactly what the model is told.
+            for (const char* action : {"permissions", "capabilities"}) {
+                const auto r = cc::actions::run(*s.value(), action, cc::json::Value::object());
+                std::cout << r.text << "\n";
+            }
+            return cc::permission_guidance().empty() ? 0 : 1;
         } else if (arg == "--list-tools") {
             // The whole registry, including tools that are gated off by
             // default, so the flag answers "what exists" rather than "what

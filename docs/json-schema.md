@@ -1,6 +1,6 @@
 # JSON schema
 
-The MCP tools and `cc --raw` return JSON for anything whose shape is open-ended: window lists,
+The MCP tools return JSON for anything whose shape is open-ended: window lists,
 accessibility trees, device inventories, shell results. This document is the
 contract for those payloads.
 

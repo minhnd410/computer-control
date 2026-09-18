@@ -12,9 +12,13 @@ Nothing is uploaded by hand, so what you download is what CI built from that tag
 
 ```bash
 # macOS (Apple silicon) — swap macos-arm64 for your platform
-curl -fsSL -o cc.tar.gz https://github.com/minhnd410/computer-control/releases/latest/download/computer-control-macos-arm64.tar.gz
-tar -xzf cc.tar.gz
-sudo mv computer-control/cc computer-control/computer-control-mcp /usr/local/bin/
+BASE=https://github.com/minhnd410/computer-control/releases/latest/download
+curl -fsSLO "$BASE/computer-control-macos-arm64.tar.gz"
+curl -fsSLO "$BASE/computer-control-macos-arm64.tar.gz.sha256"
+shasum -a 256 -c computer-control-macos-arm64.tar.gz.sha256   # or sha256sum -c
+tar -xzf computer-control-macos-arm64.tar.gz
+sudo mv computer-control/computer-control-mcp /usr/local/bin/
+computer-control-mcp --request-permissions   # grant, then report
 ```
 
 | Platform | Archive |
@@ -24,12 +28,9 @@ sudo mv computer-control/cc computer-control/computer-control-mcp /usr/local/bin
 | Linux, x86_64 | `computer-control-linux-x86_64.tar.gz` |
 | Windows, x86_64 | `computer-control-windows-x86_64.zip` |
 
-Each archive ships with a `.sha256` next to it. Verify before running a binary
-that can drive your desktop:
-
-```bash
-shasum -a 256 -c computer-control-macos-arm64.tar.gz.sha256
-```
+The checksum step is not decoration: this is a binary that can drive your
+desktop. Keep the archive's original filename, since that is the name recorded
+in the `.sha256`.
 
 Linux on arm64 has no prebuilt archive; build from source.
 
@@ -52,9 +53,9 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Produces `build/cc`, `build/computer-control-mcp`, the static library
-`libcomputer_control.a` (`computer_control_static.lib` on Windows) and the
-public headers.
+Produces `build/computer-control-mcp`, the `build/cc` debugging CLI, the static
+library `libcomputer_control.a` (`computer_control_static.lib` on Windows) and
+the public headers.
 
 System packages:
 
@@ -86,14 +87,21 @@ manifest, and a package index entry.
 | `uvx` | Nothing published to PyPI. |
 | Docker | Removed. A container cannot reach the host's display server, so it could never control a real desktop — it was a sandbox pretending to be an install method. |
 
-## Driving it from another language
+## What ships
 
-There is no C ABI and no Python package. The CLI is the binding: every action
-accepts `--raw` and returns exactly the JSON the matching MCP tool returns.
+One binary: `computer-control-mcp`. There is no C ABI and no Python package,
+and the `cc` CLI is not in the release archives — it mirrors the same 32-action
+registry as the MCP tool list and adds no capability, so shipping it would mean
+two binaries to install and explain for one job.
+
+`cc` is still in the repository as the contributor debugging tool, and a source
+build produces it. Every action accepts `--raw` and returns byte-for-byte what
+the matching MCP tool returns, which makes it a convenient scripting binding if
+you are building from source anyway:
 
 ```bash
-cc windows --raw | jq '.result.windows[] | select(.focused)'
-cc snapshot --raw --vision false | jq '.result.elements[] | select(.role=="button")'
+cmake --build build --target cc_cli
+./build/cc windows --raw | jq '.result.windows[] | select(.focused)'
 ```
 
 The [JSON schema](json-schema.md) documents those payloads, and is
