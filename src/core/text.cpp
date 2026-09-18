@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 #include "core/text.hpp"
 
+#include <cstdint>
+#include <vector>
+
+#include "cc/screen.hpp"
+
 namespace cc::text {
 namespace {
 
@@ -77,6 +82,53 @@ std::string pad_utf8(std::string_view s, std::size_t width) {
     std::string out = truncate_utf8(s, width);
     if (out.size() < width) out.append(width - out.size(), ' ');
     return out;
+}
+
+std::string utf16le_base64(std::string_view utf8) {
+    std::vector<std::uint8_t> bytes;
+    bytes.reserve(utf8.size() * 2);
+
+    std::size_t i = 0;
+    while (i < utf8.size()) {
+        const auto lead = static_cast<unsigned char>(utf8[i]);
+        const int len = sequence_length(lead);
+        if (len == 0 || !valid_sequence(utf8, i, len)) {
+            // Emit U+FFFD rather than propagating a malformed byte into a
+            // command PowerShell will then fail to parse.
+            bytes.push_back(0xFD);
+            bytes.push_back(0xFF);
+            ++i;
+            continue;
+        }
+
+        std::uint32_t cp = 0;
+        switch (len) {
+            case 1: cp = lead; break;
+            case 2: cp = lead & 0x1Fu; break;
+            case 3: cp = lead & 0x0Fu; break;
+            default: cp = lead & 0x07u; break;
+        }
+        for (int k = 1; k < len; ++k) {
+            cp = (cp << 6) |
+                 (static_cast<unsigned char>(utf8[i + static_cast<std::size_t>(k)]) & 0x3Fu);
+        }
+        i += static_cast<std::size_t>(len);
+
+        auto push = [&bytes](std::uint16_t unit) {
+            bytes.push_back(static_cast<std::uint8_t>(unit & 0xFF));
+            bytes.push_back(static_cast<std::uint8_t>((unit >> 8) & 0xFF));
+        };
+        if (cp < 0x10000) {
+            push(static_cast<std::uint16_t>(cp));
+        } else {
+            // Outside the BMP needs a surrogate pair; UTF-16LE has no other
+            // way to carry it.
+            cp -= 0x10000;
+            push(static_cast<std::uint16_t>(0xD800 + (cp >> 10)));
+            push(static_cast<std::uint16_t>(0xDC00 + (cp & 0x3FF)));
+        }
+    }
+    return base64(bytes);
 }
 
 std::string sanitize_utf8(std::string_view s) {

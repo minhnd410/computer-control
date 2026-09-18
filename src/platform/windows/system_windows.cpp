@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cc/system.hpp"
+#include "core/text.hpp"
 
 namespace cc {
 namespace {
@@ -215,13 +216,28 @@ public:
 
         std::wstring cmdline;
         if (interpreter == "cmd") {
-            cmdline = L"cmd.exe /D /C " + widen(req.command);
+            // /S plus surrounding quotes is the documented way to hand cmd a
+            // command verbatim. Without /S, cmd applies its "strip the first
+            // and last quote" rule and mangles anything containing quotes.
+            cmdline = L"cmd.exe /D /S /C \"" + widen(req.command) + L"\"";
         } else {
-            // -NoProfile keeps the user's profile script from changing
-            // behaviour and costs ~300ms less per call.
+            // -EncodedCommand rather than -Command, because quoting a
+            // PowerShell command on a Windows command line is unwinnable:
+            // CommandLineToArgvW, cmd and PowerShell each get a turn at the
+            // quotes, so anything containing a double quote - which is most
+            // real PowerShell - arrives mangled. Base64 of UTF-16LE sidesteps
+            // all three.
+            //
+            // The prelude forces UTF-8 output; PowerShell otherwise emits the
+            // console's active code page, which turns any non-ASCII result
+            // into mojibake by the time it reaches a JSON string.
+            const std::string prelude =
+                "$OutputEncoding = [Console]::OutputEncoding = "
+                "[Text.UTF8Encoding]::new($false); ";
+
             cmdline = widen(interpreter) +
-                      L" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command " + L"\"" +
-                      widen(req.command) + L"\"";
+                      L" -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " +
+                      widen(text::utf16le_base64(prelude + req.command));
         }
 
         SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};

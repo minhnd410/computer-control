@@ -31,4 +31,14 @@ std::string sanitize_utf8(std::string_view s);
 // True when every byte sequence is well-formed UTF-8.
 bool is_valid_utf8(std::string_view s);
 
+// Base64 of the UTF-16LE encoding, with no BOM.
+//
+// This is the form PowerShell's -EncodedCommand wants, and using it is the
+// only reliable way to hand PowerShell a script from C++: quoting a command on
+// a Windows command line has to survive CommandLineToArgvW, possibly cmd, and
+// then PowerShell's own parser, so anything containing a double quote - which
+// is most real PowerShell - arrives mangled. Lives here rather than in the
+// Windows backend so it can be tested on any platform.
+std::string utf16le_base64(std::string_view utf8);
+
 }  // namespace cc::text

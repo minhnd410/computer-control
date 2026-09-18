@@ -181,3 +181,41 @@ TEST(parse_point_string_and_space_forms) {
 
     CHECK(!cc::actions::parse_point(json::Value("nope"), "at").ok());
 }
+
+// --- PowerShell -EncodedCommand ---------------------------------------------
+// Quoting a PowerShell command on a Windows command line cannot be done
+// reliably: CommandLineToArgvW, cmd and PowerShell each reinterpret the
+// quotes. -EncodedCommand takes base64 of UTF-16LE instead. The encoding is
+// Windows-only in use but plain arithmetic, so it is tested everywhere.
+// Expected values come from Python's codecs, not from this implementation.
+
+TEST(utf16le_base64_matches_reference_encoding) {
+    CHECK_EQ(text::utf16le_base64("echo hello"), std::string("ZQBjAGgAbwAgAGgAZQBsAGwAbwA="));
+    // The case that broke the old quoting: embedded double quotes.
+    CHECK_EQ(text::utf16le_base64("Write-Host \"hi\""),
+             std::string("VwByAGkAdABlAC0ASABvAHMAdAAgACIAaABpACIA"));
+}
+
+TEST(utf16le_base64_handles_non_bmp) {
+    // café + U+1F600, which needs a surrogate pair in UTF-16.
+    CHECK_EQ(text::utf16le_base64("Write-Host \"caf\xC3\xA9 \xF0\x9F\x98\x80\""),
+             std::string("VwByAGkAdABlAC0ASABvAHMAdAAgACIAYwBhAGYA6QAgAD3YAN4iAA=="));
+}
+
+TEST(utf16le_base64_is_empty_for_empty_input) {
+    CHECK_EQ(text::utf16le_base64(""), std::string(""));
+}
+
+TEST(utf16le_base64_emits_no_bom) {
+    // A BOM would make PowerShell treat the first character as content.
+    const std::string encoded = text::utf16le_base64("a");
+    CHECK_EQ(encoded, std::string("YQA="));
+}
+
+TEST(utf16le_base64_repairs_malformed_input) {
+    // A truncated sequence must not propagate into a command PowerShell will
+    // then fail to parse; it becomes U+FFFD.
+    const std::string encoded = text::utf16le_base64("ok\xC3");
+    CHECK(!encoded.empty());
+    CHECK_EQ(encoded, std::string("bwBrAP3/"));
+}
