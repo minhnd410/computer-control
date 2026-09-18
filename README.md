@@ -8,6 +8,7 @@
 **One C++ core for driving a desktop — and the phones on it.** macOS, Windows and Linux, plus iOS simulators, Android emulators and mirrored handsets, behind a single API that ships as a native library, a stable C ABI, a CLI, and an MCP server.
 
 ```bash
+cc permissions --request                # ask the OS for what it needs
 cc screenshot --out screen.png          # capture, DPI-correct
 cc click --at 640,480                   # click
 cc gesture --kind pinch --scale 2.0     # real multi-touch where the OS allows it
@@ -44,6 +45,7 @@ Everything is written once in C++20 and exposed through a stable C ABI, so the P
 | **Apps** | list, launch with args, activate, quit |
 | **Accessibility** | full element tree with numbered labels, element-at-point, focused element, invoke/toggle/set-value |
 | **System** | clipboard, process list/kill, shell, notifications, Windows registry |
+| **Permissions** | check and request OS grants, with the responsible-process diagnosis that explains why a grant looks present but is not |
 | **Mobile** | discovery, boot/shutdown, tap/swipe/stroke/gesture, text, hardware buttons, screenshots, install/launch/terminate, deep links, device UI tree |
 
 ### Gesture fidelity by platform
@@ -241,16 +243,62 @@ The OS gates this deliberately. Each platform fails in its own way, and every er
 
 ### macOS
 
-Two grants, in **System Settings → Privacy & Security**:
+Run this first — it tells you exactly what is wrong and how to fix it:
 
-- **Accessibility** — for synthetic input and the element tree.
-- **Screen & System Audio Recording** — for screenshots.
+```bash
+cc permissions            # what the OS is allowing
+cc permissions --request  # prompt for anything missing, and open the right pane
+```
 
-Both are cached at process launch, so **restart the process after granting**. Toggling while it runs does nothing.
+Two grants are needed, both under **System Settings → Privacy & Security**:
 
-One subtlety that costs people hours: `AXIsProcessTrusted()` can return true because the *parent terminal* is trusted, while the binary itself still gets refused and receives placeholder elements instead of a real tree. This library detects that exact state and says so, rather than reporting an empty desktop. Grant the binary itself, not just your terminal.
+- **Accessibility** — synthetic input and the element tree.
+- **Screen & System Audio Recording** — screenshots.
 
-`CGDisplayCreateImage` and `CGWindowListCreateImage` are **removed** — not just deprecated — in the macOS 15 SDK. Capture uses ScreenCaptureKit, which needs macOS 12.3+.
+Both are read at process launch, so **restart the process after granting**. Toggling while it runs does nothing.
+
+#### Why the binary may not appear in the list
+
+This is the part that wastes an afternoon, so it is worth stating plainly.
+
+macOS attributes a permission to the **responsible process**, not to the binary that asks. A command-line tool started from a terminal is attributed to *the terminal*. Three things follow:
+
+1. `cc` never appears in the Accessibility list, so there is nothing to enable.
+2. The permission prompt never fires — `AXIsProcessTrusted()` already returns true because the terminal is granted, and macOS only prompts a process it considers untrusted.
+3. That inherited grant covers the *trust check* but not always real inspection. You get `AXIsProcessTrusted() == true` while every window comes back as an empty placeholder.
+
+`cc permissions` detects all three and names the owner:
+
+```
+Permissions for this process are attributed to iTerm2, not to the binary
+itself, which is why
+  /usr/local/bin/cc
+does not appear in System Settings.
+```
+
+Two ways to fix it:
+
+- **Add the binary by hand.** In the Accessibility list, click **+** and select the exact path `cc permissions` printed. Restart the process.
+- **Use the app bundle** (better, because the grant survives rebuilds):
+
+  ```bash
+  cmake --build build --target macos_bundle
+  open build/computer-control.app --args permissions --request
+  ```
+
+  A bundle launched through LaunchServices is its own responsible process, so it prompts properly and appears in the list under its own name.
+
+**Signing matters for persistence.** An ad-hoc signature is keyed to the code hash, so every rebuild is a new identity and the grant is lost. Pass a real certificate to keep it:
+
+```bash
+cmake -S . -B build -DCC_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+```
+
+A self-signed certificate from Keychain Access works too and costs nothing.
+
+When the MCP server is launched by Claude Desktop, the responsible process is Claude Desktop — so its grants apply and there is usually nothing to do.
+
+`CGDisplayCreateImage` and `CGWindowListCreateImage` are **removed**, not merely deprecated, in the macOS 15 SDK. Capture uses ScreenCaptureKit, which needs macOS 12.3+.
 
 ### Windows
 

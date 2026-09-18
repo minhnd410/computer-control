@@ -10,16 +10,60 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "capi/actions.hpp"
+#include "cc/permissions.hpp"
 #include "cc/session.hpp"
 #include "core/json.hpp"
 
 using cc::json::Value;
 
 namespace {
+
+// Which OS permissions an action actually needs. Checking before running lets
+// the tool explain a missing grant up front, rather than after a click has
+// silently gone nowhere - which on macOS is the default failure mode, because
+// synthetic input into an ungranted process is discarded without an error.
+std::vector<cc::Permission> permissions_for(const std::string& action) {
+    static const std::set<std::string> kNeedsScreen = {"screenshot", "snapshot", "zoom"};
+    static const std::set<std::string> kNeedsAccessibility = {
+        "snapshot", "elements", "wait_for", "click",  "type",           "key",
+        "key_hold", "key_down", "key_up",   "move",   "scroll",         "drag",
+        "stroke",   "gesture",  "windows",  "device", "cursor_position"};
+
+    std::vector<cc::Permission> out;
+    if (kNeedsScreen.count(action)) out.push_back(cc::Permission::ScreenRecording);
+    if (kNeedsAccessibility.count(action)) out.push_back(cc::Permission::Accessibility);
+    return out;
+}
+
+// Prints a warning for anything missing. Returns true if something was wrong.
+bool warn_about_permissions(const std::string& action) {
+    bool warned = false;
+    for (cc::Permission needed : permissions_for(action)) {
+        const cc::PermissionStatus status = cc::check_permission(needed);
+        if (status.state == cc::PermissionState::Granted ||
+            status.state == cc::PermissionState::NotRequired) {
+            continue;
+        }
+        if (!warned) std::cerr << "\n";
+        std::cerr << "cc: " << cc::to_string(needed) << " is " << cc::to_string(status.state)
+                  << " - `" << action << "` will not work correctly.\n";
+        if (!status.detail.empty()) std::cerr << "    " << status.detail << "\n";
+        if (!status.remedy.empty()) {
+            std::istringstream lines(status.remedy);
+            std::string line;
+            while (std::getline(lines, line)) std::cerr << "    " << line << "\n";
+        }
+        std::cerr << "\n";
+        warned = true;
+    }
+    return warned;
+}
 
 void print_usage() {
     std::cout << R"(cc - control this computer from the shell
@@ -47,6 +91,8 @@ ARGUMENT FORMS
   Booleans accept true/false; a bare flag means true.
 
 EXAMPLES
+  cc permissions              # what the OS is allowing, and how to fix it
+  cc permissions --request    # prompt for anything missing
   cc capabilities
   cc displays
   cc screenshot --out screen.png --max_dimension 1200
@@ -176,6 +222,12 @@ int main(int argc, char** argv) {
             if (!s.error().remedy.empty()) std::cerr << "\n" << s.error().remedy << "\n";
             return 1;
         }
+        const std::string guidance = cc::permission_guidance();
+        if (guidance.empty()) {
+            std::cout << "Permissions: all granted.\n\n";
+        } else {
+            std::cout << "Permissions need attention:\n\n" << guidance << "\n";
+        }
         std::cout << s.value()->capability_report() << "\n";
         return 0;
     }
@@ -205,6 +257,12 @@ int main(int argc, char** argv) {
         std::cerr << "cc: " << session.error().message << "\n";
         if (!session.error().remedy.empty()) std::cerr << "\n" << session.error().remedy << "\n";
         return 1;
+    }
+
+    // Warn before acting, not after: a click that lands nowhere looks like a
+    // coordinate bug, and the user has no way to tell the difference.
+    if (command != "permissions" && command != "capabilities") {
+        warn_about_permissions(command);
     }
 
     auto result = cc::actions::run(*session.value(), command, action_args);

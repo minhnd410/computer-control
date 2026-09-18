@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "core/json.hpp"
 
+#include "core/text.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -114,11 +116,18 @@ void Value::set(std::string key, Value v) {
 }
 
 std::string escape(std::string_view s) {
+    // Anything that reaches here is about to become part of a JSON document on
+    // a wire protocol, so malformed UTF-8 is repaired rather than passed
+    // through. One split multi-byte character invalidates the whole document
+    // and, on the MCP stdio transport, drops the connection with a parse error
+    // nowhere near the cause. is_valid_utf8 is a fast scan, so the common case
+    // costs one pass and no allocation.
+    const std::string repaired = cc::text::sanitize_utf8(s);
     std::string out;
-    out.reserve(s.size() + 8);
+    out.reserve(repaired.size() + 8);
     out.push_back('"');
-    for (std::size_t i = 0; i < s.size(); ++i) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
+    for (std::size_t i = 0; i < repaired.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(repaired[i]);
         switch (c) {
             case '"': out += "\\\""; break;
             case '\\': out += "\\\\"; break;

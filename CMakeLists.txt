@@ -25,6 +25,10 @@ option(CC_BUILD_TESTS    "Build tests"                                 ON)
 option(CC_ENABLE_LTO     "Link-time optimization in Release"           ON)
 option(CC_ENABLE_NATIVE  "Tune for the building machine's CPU"         OFF)
 option(CC_USE_SYSTEM_ZLIB "Use system zlib when available"             ON)
+option(CC_BUILD_APP_BUNDLE "Build computer-control.app on macOS"       ON)
+# A stable signing identity is what makes a macOS permission grant survive a
+# rebuild; ad-hoc signatures change with the code hash.
+set(CC_CODESIGN_IDENTITY "" CACHE STRING "codesign identity for the macOS bundle")
 
 # ---------------------------------------------------------------------------
 # Platform detection
@@ -53,6 +57,8 @@ set(CC_CORE_SOURCES
   src/core/image.cpp
   src/core/image_decode.cpp
   src/core/a11y_common.cpp
+  src/core/permissions_common.cpp
+  src/core/text.cpp
   src/core/fuzzy.cpp
   src/core/session.cpp
   src/devices/device_manager.cpp
@@ -73,6 +79,7 @@ if(CC_PLATFORM STREQUAL "macos")
     src/platform/macos/window_macos.mm
     src/platform/macos/a11y_macos.mm
     src/platform/macos/system_macos.mm
+    src/platform/macos/permissions_macos.mm
   )
 elseif(CC_PLATFORM STREQUAL "windows")
   set(CC_PLATFORM_SOURCES
@@ -82,6 +89,7 @@ elseif(CC_PLATFORM STREQUAL "windows")
     src/platform/windows/window_windows.cpp
     src/platform/windows/a11y_windows.cpp
     src/platform/windows/system_windows.cpp
+    src/platform/windows/permissions_windows.cpp
   )
 else()
   set(CC_PLATFORM_SOURCES
@@ -91,6 +99,7 @@ else()
     src/platform/linux/window_linux.cpp
     src/platform/linux/a11y_linux.cpp
     src/platform/linux/system_linux.cpp
+    src/platform/linux/permissions_linux.cpp
   )
 endif()
 
@@ -137,6 +146,7 @@ if(CC_PLATFORM STREQUAL "macos")
     src/platform/macos/window_macos.mm
     src/platform/macos/a11y_macos.mm
     src/platform/macos/system_macos.mm
+    src/platform/macos/permissions_macos.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
   foreach(fw CoreGraphics CoreFoundation ApplicationServices Foundation AppKit
              ScreenCaptureKit CoreMedia CoreVideo IOKit)
@@ -299,10 +309,18 @@ if(CC_BUILD_TESTS)
     tests/test_motion.cpp
     tests/test_display.cpp
     tests/test_image.cpp
-    tests/test_device.cpp)
+    tests/test_device.cpp
+    tests/test_text.cpp)
   target_include_directories(cc_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
   target_link_libraries(cc_tests PRIVATE cc_static)
   add_test(NAME unit COMMAND cc_tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# macOS app bundle
+# ---------------------------------------------------------------------------
+if(APPLE AND CC_BUILD_APP_BUNDLE AND CC_BUILD_CLI AND CC_BUILD_MCP)
+  include(cmake/MacAppBundle.cmake)
 endif()
 
 # ---------------------------------------------------------------------------

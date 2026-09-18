@@ -10,6 +10,8 @@
 
 #include "capi/actions.hpp"
 
+#include "core/text.hpp"
+
 namespace cc::actions {
 namespace {
 
@@ -80,10 +82,10 @@ ActionResult act_device(Session& s, const Value& args) {
         std::string text;
         for (const auto& d : list.value()) {
             arr.push_back(device_json(d));
-            char buf[256];
-            std::snprintf(buf, sizeof(buf), "%-26.26s %-9s %-8s %s  [%s]\n", d.name.c_str(),
-                          to_string(d.platform), d.booted ? "booted" : "shutdown",
-                          d.os_version.c_str(), d.id.c_str());
+            char buf[160];
+            text += text::pad_utf8(d.name, 26);
+            std::snprintf(buf, sizeof(buf), " %-9s %-8s %s  [%s]\n", to_string(d.platform),
+                          d.booted ? "booted" : "shutdown", d.os_version.c_str(), d.id.c_str());
             text += buf;
         }
         Value out = Value::object();
@@ -366,9 +368,11 @@ ActionResult act_device(Session& s, const Value& args) {
             c.set("y", n->bounds.center().y);
             v.set("center", c);
             arr.push_back(v);
-            char buf[320];
-            std::snprintf(buf, sizeof(buf), "%3d %-12s %-30.30s (%.0f,%.0f)\n", n->label,
-                          to_string(n->role), n->name.c_str(), n->bounds.center().x,
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), "%3d %-12s ", n->label, to_string(n->role));
+            text += buf;
+            text += text::pad_utf8(n->name, 30);
+            std::snprintf(buf, sizeof(buf), " (%.0f,%.0f)\n", n->bounds.center().x,
                           n->bounds.center().y);
             text += buf;
         }

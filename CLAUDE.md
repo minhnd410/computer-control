@@ -58,7 +58,9 @@ These are the things that break subtly if you get them wrong.
 
 **6. Budgets on every tree walk.** Accessibility APIs are cross-process IPC; an unresponsive app can hang a walk indefinitely. Every walk honours a wall-clock deadline and a node cap, and reports `truncated` with a reason rather than returning a plausible-looking partial tree.
 
-**7. stdout belongs to the MCP protocol.** On the stdio transport, any stray write corrupts the stream and the client drops the connection with an opaque parse error. Log to stderr.
+**7. Never truncate text by bytes.** printf's `%.28s` cuts mid-character in UTF-8, and one split character invalidates a whole JSON document — which on the stdio transport drops the connection with a parse error nowhere near the cause. Use `text::truncate_utf8` / `text::pad_utf8`. `json::escape` also sanitises as a backstop, but the backstop is not the fix.
+
+**8. stdout belongs to the MCP protocol.** On the stdio transport, any stray write corrupts the stream and the client drops the connection with an opaque parse error. Log to stderr.
 
 ## ABI rules
 
@@ -75,6 +77,8 @@ These are the things that break subtly if you get them wrong.
 **macOS**
 - `CGDisplayCreateImage` and `CGWindowListCreateImage` are *removed* in the macOS 15 SDK, not merely deprecated. ScreenCaptureKit is the only path.
 - `AXIsProcessTrusted()` can report true while per-app inspection is still refused, returning placeholder elements whose role is `AXApplication` and whose `AXChildren` is `kAXErrorAttributeUnsupported`. `a11y_macos.mm` detects this and reports a permissions problem instead of an empty tree. Do not "fix" that by removing the check.
+- Permission checks must be **functional**, never just `AXIsProcessTrusted()`. `permissions_macos.mm` actually reads a window from another process, because the trust flag and the capability disagree in exactly the case people hit.
+- TCC attributes a grant to the *responsible process*, which for a CLI is the terminal. `responsibility_get_pid_responsible_for_pid` (resolved via `dlsym`, no public header) gives the owning pid; naming it is what turns an unexplainable failure into an obvious one. A CLI therefore cannot prompt itself into the Accessibility list — the app bundle target exists for that.
 - CGEvent coordinates are **points**, not pixels.
 - Multi-clicks need `kCGMouseEventClickState` set to 2 or 3; two fast single clicks are not a double click.
 - `kCGWindowListOptionOnScreenOnly` means "on the active Space", which is why device discovery lists offscreen windows.

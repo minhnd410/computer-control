@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include "capi/actions.hpp"
 
+#include "core/text.hpp"
+
+#include "cc/permissions.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -424,6 +428,16 @@ Result<GestureRequest> gesture_from(Session& s, const Value& args) {
 
 const std::vector<ActionSpec>& registry() {
     static const std::vector<ActionSpec> specs = {
+        {"permissions", "Permissions",
+         "Check, and optionally request, the OS permissions this tool needs. On macOS this is "
+         "the one to run when the element tree comes back empty: it distinguishes a real "
+         "denial from the inherited-grant case, where the process is trusted but still "
+         "refused, and prints the exact binary path to add in System Settings.",
+         R"({"type":"object","properties":{
+            "request":{"type":"boolean","default":false,"description":"Prompt for anything missing and open the relevant settings page."},
+            "permission":{"type":"string","enum":["accessibility","screen_recording","input_monitoring","touch_injection"],"description":"Limit to one; default is all."}}})",
+         false, false},
+
         {"capabilities", "Capabilities",
          "Report what this host can do: displays and their DPI scale, which backends came up, "
          "which permissions are missing, gesture fidelity per gesture type, and which mobile "
@@ -750,6 +764,95 @@ const ActionSpec* find_spec(std::string_view name) {
 
 namespace {
 
+Result<Permission> permission_from(std::string_view name) {
+    if (name == "accessibility") return Permission::Accessibility;
+    if (name == "screen_recording") return Permission::ScreenRecording;
+    if (name == "input_monitoring") return Permission::InputMonitoring;
+    if (name == "touch_injection") return Permission::TouchInjection;
+    return err(ErrorCode::InvalidArgument, "unknown permission '" + std::string(name) + "'");
+}
+
+Value permission_json(const PermissionStatus& p) {
+    Value v = Value::object();
+    v.set("permission", to_string(p.permission));
+    v.set("state", to_string(p.state));
+    if (!p.detail.empty()) v.set("detail", p.detail);
+    if (!p.remedy.empty()) v.set("remedy", p.remedy);
+    v.set("can_prompt", p.can_prompt);
+    if (!p.affects.empty()) {
+        Value a = Value::array();
+        for (const auto& x : p.affects) a.push_back(x);
+        v.set("affects", a);
+    }
+    return v;
+}
+
+ActionResult act_permissions(Session&, const Value& args) {
+    const bool request = args["request"].as_bool(false);
+
+    std::vector<PermissionStatus> statuses;
+    if (args.contains("permission") && !args["permission"].is_null()) {
+        auto which = permission_from(args["permission"].as_string());
+        if (!which) return fail(which.error());
+        statuses.push_back(request ? request_permission(which.value())
+                                   : check_permission(which.value()));
+    } else if (request) {
+        // Only prompt for what is actually missing: asking for something
+        // already granted is a no-op that still opens a settings pane at the
+        // user, which is worse than useless.
+        for (const auto& current : check_permissions()) {
+            if (current.state == PermissionState::Denied ||
+                current.state == PermissionState::NotDetermined) {
+                statuses.push_back(request_permission(current.permission));
+            } else {
+                statuses.push_back(current);
+            }
+        }
+    } else {
+        statuses = check_permissions();
+    }
+
+    Value list = Value::array();
+    std::string text;
+    bool all_good = true;
+    for (const auto& p : statuses) {
+        list.push_back(permission_json(p));
+        const bool good =
+            (p.state == PermissionState::Granted || p.state == PermissionState::NotRequired);
+        all_good = all_good && good;
+        char buf[160];
+        std::snprintf(buf, sizeof(buf), "%-18s %s\n", to_string(p.permission), to_string(p.state));
+        text += buf;
+        if (!good) {
+            if (!p.detail.empty()) text += "  " + p.detail + "\n";
+            if (!p.remedy.empty()) text += "  " + p.remedy + "\n";
+            text += "\n";
+        }
+    }
+
+    Value out = Value::object();
+    out.set("permissions", list);
+    out.set("all_granted", all_good);
+    out.set("executable", executable_path());
+    const std::string bundle = bundle_path();
+    if (!bundle.empty()) out.set("bundle", bundle);
+    out.set("own_tcc_identity", has_own_tcc_identity());
+
+    // Naming the process that actually owns the grant is the difference
+    // between "permissions look fine but nothing works" and an obvious fix.
+    if (const std::string owner = permission_owner(); !owner.empty()) {
+        out.set("permissions_attributed_to", owner);
+        text += "\nPermissions for this process are attributed to " + owner +
+                ", not to the binary\nitself, which is why\n  " + executable_path() +
+                "\ndoes not appear in System Settings. That is normal for a command-line "
+                "tool started\nfrom a terminal. If element queries come back empty anyway, "
+                "add the binary there\nwith the + button, or build the app bundle "
+                "(`cmake --build build --target macos_bundle`)\nand launch it with `open` so "
+                "it holds its own grant.\n";
+    }
+    return succeed(text, out);
+}
+
 ActionResult act_capabilities(Session& s, const Value&) {
     json::ParseError pe;
     Value v = json::parse(s.capability_report(), &pe);
@@ -841,10 +944,13 @@ ActionResult act_snapshot(Session& s, const Value& args) {
     std::string text;
     for (const Node* n : tree.value().interactive) {
         elements.push_back(node_json(*n, false));
-        char buf[512];
-        std::snprintf(buf, sizeof(buf), "%3d %-14s %-28.28s (%.0f,%.0f)\n", n->label,
-                      to_string(n->role), n->name.empty() ? n->value.c_str() : n->name.c_str(),
-                      n->bounds.center().x, n->bounds.center().y);
+        const std::string label = n->name.empty() ? n->value : n->name;
+        char buf[256];
+        std::snprintf(buf, sizeof(buf), "%3d %-14s ", n->label, to_string(n->role));
+        text += buf;
+        text += text::pad_utf8(label, 28);
+        std::snprintf(buf, sizeof(buf), " (%.0f,%.0f)\n", n->bounds.center().x,
+                      n->bounds.center().y);
         text += buf;
     }
     out.set("elements", elements);
@@ -1265,11 +1371,12 @@ ActionResult act_windows(Session& s, const Value& args) {
             v.set("focused", w.focused);
             v.set("display", w.display_index);
             arr.push_back(v);
-            char buf[320];
-            std::snprintf(
-                buf, sizeof(buf), "%-10llu %-18.18s %-34.34s %.0fx%.0f at (%.0f,%.0f)%s\n",
-                static_cast<unsigned long long>(w.id), w.app_name.c_str(), w.title.c_str(),
-                w.bounds.w, w.bounds.h, w.bounds.x, w.bounds.y, w.focused ? "  *focused" : "");
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), "%-10llu ", static_cast<unsigned long long>(w.id));
+            text += buf;
+            text += text::pad_utf8(w.app_name, 18) + " " + text::pad_utf8(w.title, 34);
+            std::snprintf(buf, sizeof(buf), " %.0fx%.0f at (%.0f,%.0f)%s\n", w.bounds.w, w.bounds.h,
+                          w.bounds.x, w.bounds.y, w.focused ? "  *focused" : "");
             text += buf;
         }
         Value out = Value::object();
@@ -1332,9 +1439,11 @@ ActionResult act_app(Session& s, const Value& args) {
             v.set("active", a.active);
             v.set("windows", a.window_count);
             arr.push_back(v);
-            char buf[256];
-            std::snprintf(buf, sizeof(buf), "%-7lld %-28.28s %d window(s)%s\n",
-                          static_cast<long long>(a.pid), a.name.c_str(), a.window_count,
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "%-7lld ", static_cast<long long>(a.pid));
+            text += buf;
+            text += text::pad_utf8(a.name, 28);
+            std::snprintf(buf, sizeof(buf), " %d window(s)%s\n", a.window_count,
                           a.active ? "  *active" : "");
             text += buf;
         }
@@ -1519,10 +1628,11 @@ ActionResult act_process(Session& s, const Value& args) {
             v.set("name", p.name);
             v.set("memory_mb", p.memory_bytes / 1048576.0);
             arr.push_back(v);
-            char buf[200];
-            std::snprintf(buf, sizeof(buf), "%-7lld %-32.32s %8.1f MB\n",
-                          static_cast<long long>(p.pid), p.name.c_str(),
-                          p.memory_bytes / 1048576.0);
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "%-7lld ", static_cast<long long>(p.pid));
+            text += buf;
+            text += text::pad_utf8(p.name, 32);
+            std::snprintf(buf, sizeof(buf), " %8.1f MB\n", p.memory_bytes / 1048576.0);
             text += buf;
         }
         Value out = Value::object();
@@ -1621,6 +1731,7 @@ ActionResult run(Session& session, std::string_view name, const Value& args) {
     // both treat a throw as fatal, and a bad JSON shape should be an error
     // response, not a crashed server.
     try {
+        if (name == "permissions") return act_permissions(session, args);
         if (name == "capabilities") return act_capabilities(session, args);
         if (name == "displays") return act_displays(session, args);
         if (name == "screenshot") return do_capture(session, args, true);
