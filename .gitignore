@@ -1,0 +1,92 @@
+# Build output
+build/
+build-*/
+out/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exe
+*.pdb
+*.ilk
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+Testing/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+package-lock.json
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# Credentials and machine-specific state
+# ---------------------------------------------------------------------------
+# This is a public repository and this tool holds the keys to a desktop, so
+# anything that could carry a secret or a bearer token is excluded by default
+# rather than case by case.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+id_rsa*
+id_ed25519*
+credentials.json
+client_secret*.json
+service-account*.json
+.netrc
+.npmrc
+.pypirc
+secrets.*
+*.secret
+*_token
+*.token
+auth.json
+config.local.*
+settings.local.*
+
+# Captures can contain anything that was on the operator's screen: password
+# managers, private messages, customer data. Never commit them.
+screenshots/
+captures/
+*.png
+*.jpg
+*.jpeg
+*.webp
+!docs/**/*.png
+!assets/**/*.png
+
+# Local run artefacts
+*.log
+.cc-session/

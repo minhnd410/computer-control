@@ -1,0 +1,12 @@
+build/
+build-*/
+.git/
+.github/
+docs/
+bindings/node/
+*.md
+!README.md
+.venv/
+__pycache__/
+*.png
+*.jpg

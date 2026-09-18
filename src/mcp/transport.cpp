@@ -1,0 +1,273 @@
+// SPDX-License-Identifier: MIT
+#include <atomic>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
+#include <mutex>
+#include <sstream>
+
+#include "mcp/server.hpp"
+
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+using socket_t = SOCKET;
+#define CC_INVALID_SOCKET INVALID_SOCKET
+#define cc_close_socket closesocket
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <unistd.h>
+using socket_t = int;
+#define CC_INVALID_SOCKET (-1)
+#define cc_close_socket ::close
+#endif
+
+namespace cc::mcp {
+namespace {
+
+// MCP over stdio is newline-delimited JSON. The fatal mistake here is letting
+// anything else reach stdout: a stray printf from a library corrupts the
+// stream and the client drops the connection with an opaque parse error. The
+// server therefore redirects C++ logging to stderr and never uses std::cout
+// except through this class.
+class StdioTransport final : public Transport {
+public:
+    StdioTransport() {
+#if defined(_WIN32)
+        // Without binary mode Windows rewrites \n as \r\n on the way out,
+        // which breaks the framing.
+        _setmode(_fileno(stdout), _O_BINARY);
+        _setmode(_fileno(stdin), _O_BINARY);
+#endif
+        std::ios::sync_with_stdio(false);
+    }
+
+    bool read(std::string& out) override {
+        out.clear();
+        if (!std::getline(std::cin, out)) return false;
+        // Tolerate CRLF from clients that write Windows line endings.
+        if (!out.empty() && out.back() == '\r') out.pop_back();
+        if (out.empty()) return read(out);  // skip keepalive blank lines
+        return true;
+    }
+
+    bool write(const std::string& msg) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        std::fwrite(msg.data(), 1, msg.size(), stdout);
+        std::fputc('\n', stdout);
+        std::fflush(stdout);
+        return true;
+    }
+
+    void close() override {}
+
+private:
+    std::mutex mu_;
+};
+
+// A deliberately small HTTP transport: one request, one JSON-RPC message, one
+// response. No SSE, no session resumption. Anything more belongs behind a
+// real reverse proxy, and pretending otherwise would invite exposing a desktop
+// automation server to a network it should never be on.
+class HttpTransport final : public Transport {
+public:
+    HttpTransport(socket_t listener, std::string token)
+        : listener_(listener), token_(std::move(token)) {}
+
+    ~HttpTransport() override { close(); }
+
+    bool read(std::string& out) override {
+        for (;;) {
+            if (client_ != CC_INVALID_SOCKET) {
+                cc_close_socket(client_);
+                client_ = CC_INVALID_SOCKET;
+            }
+            sockaddr_in addr{};
+#if defined(_WIN32)
+            int len = sizeof(addr);
+#else
+            socklen_t len = sizeof(addr);
+#endif
+            client_ = ::accept(listener_, reinterpret_cast<sockaddr*>(&addr), &len);
+            if (client_ == CC_INVALID_SOCKET) return false;
+
+            // Reject anything that is not loopback unless the operator bound
+            // elsewhere on purpose; a token is then mandatory.
+            std::string request;
+            if (!read_request(request)) continue;
+
+            std::string body;
+            if (!parse(request, body)) {
+                respond(400, "{\"error\":\"malformed request\"}");
+                continue;
+            }
+            out = body;
+            return true;
+        }
+    }
+
+    bool write(const std::string& msg) override {
+        respond(200, msg);
+        return true;
+    }
+
+    void close() override {
+        if (client_ != CC_INVALID_SOCKET) {
+            cc_close_socket(client_);
+            client_ = CC_INVALID_SOCKET;
+        }
+        if (listener_ != CC_INVALID_SOCKET) {
+            cc_close_socket(listener_);
+            listener_ = CC_INVALID_SOCKET;
+        }
+    }
+
+private:
+    bool read_request(std::string& out) {
+        char buf[8192];
+        std::size_t header_end = std::string::npos;
+        long long content_length = -1;
+
+        for (;;) {
+#if defined(_WIN32)
+            const int n = ::recv(client_, buf, sizeof(buf), 0);
+#else
+            const ssize_t n = ::recv(client_, buf, sizeof(buf), 0);
+#endif
+            if (n <= 0) return false;
+            out.append(buf, static_cast<std::size_t>(n));
+
+            if (header_end == std::string::npos) {
+                header_end = out.find("\r\n\r\n");
+                if (header_end != std::string::npos) {
+                    const std::string headers = out.substr(0, header_end);
+                    const auto pos = lower(headers).find("content-length:");
+                    if (pos != std::string::npos) {
+                        content_length = std::strtoll(headers.c_str() + pos + 15, nullptr, 10);
+                    }
+                }
+            }
+            if (header_end != std::string::npos) {
+                if (content_length < 0) return true;
+                if (out.size() >= header_end + 4 + static_cast<std::size_t>(content_length)) {
+                    return true;
+                }
+            }
+            if (out.size() > 32u * 1024 * 1024) return false;  // refuse absurd bodies
+        }
+    }
+
+    static std::string lower(std::string s) {
+        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    }
+
+    bool parse(const std::string& request, std::string& body) {
+        const auto header_end = request.find("\r\n\r\n");
+        if (header_end == std::string::npos) return false;
+        const std::string headers = request.substr(0, header_end);
+
+        if (!token_.empty()) {
+            const std::string lowered = lower(headers);
+            const auto pos = lowered.find("authorization: bearer ");
+            bool authorized = false;
+            if (pos != std::string::npos) {
+                const auto start = pos + 22;
+                const auto end = headers.find("\r\n", start);
+                const std::string got = headers.substr(start, end - start);
+                // Constant-time-ish compare; the token is short and this is
+                // not a high-value secret, but a length-leaking early return
+                // is trivially avoidable.
+                authorized = (got.size() == token_.size());
+                unsigned diff = 0;
+                for (std::size_t i = 0; i < token_.size() && i < got.size(); ++i) {
+                    diff |= static_cast<unsigned>(got[i] ^ token_[i]);
+                }
+                authorized = authorized && (diff == 0);
+            }
+            if (!authorized) {
+                respond(401, "{\"error\":\"missing or invalid bearer token\"}");
+                return false;
+            }
+        }
+
+        body = request.substr(header_end + 4);
+        return !body.empty();
+    }
+
+    void respond(int status, const std::string& body) {
+        std::ostringstream os;
+        os << "HTTP/1.1 " << status << (status == 200 ? " OK" : " Error") << "\r\n"
+           << "Content-Type: application/json\r\n"
+           << "Content-Length: " << body.size() << "\r\n"
+           << "Connection: close\r\n"
+           << "\r\n"
+           << body;
+        const std::string out = os.str();
+        std::size_t sent = 0;
+        while (sent < out.size()) {
+#if defined(_WIN32)
+            const int n =
+                ::send(client_, out.data() + sent, static_cast<int>(out.size() - sent), 0);
+#else
+            const ssize_t n = ::send(client_, out.data() + sent, out.size() - sent, 0);
+#endif
+            if (n <= 0) break;
+            sent += static_cast<std::size_t>(n);
+        }
+    }
+
+    socket_t listener_ = CC_INVALID_SOCKET;
+    socket_t client_ = CC_INVALID_SOCKET;
+    std::string token_;
+};
+
+}  // namespace
+
+std::unique_ptr<Transport> make_stdio_transport() {
+    return std::make_unique<StdioTransport>();
+}
+
+std::unique_ptr<Transport> make_http_transport(const ServerConfig& cfg, std::string* error) {
+    auto set_error = [&](const std::string& m) {
+        if (error) *error = m;
+        return nullptr;
+    };
+
+#if defined(_WIN32)
+    WSADATA wsa{};
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return set_error("WSAStartup failed");
+#endif
+
+    socket_t fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == CC_INVALID_SOCKET) return set_error("socket() failed");
+
+    int yes = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<std::uint16_t>(cfg.port));
+    if (::inet_pton(AF_INET, cfg.host.c_str(), &addr.sin_addr) != 1) {
+        cc_close_socket(fd);
+        return set_error("invalid host address: " + cfg.host);
+    }
+
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+        cc_close_socket(fd);
+        return set_error("cannot bind " + cfg.host + ":" + std::to_string(cfg.port));
+    }
+    if (::listen(fd, 8) != 0) {
+        cc_close_socket(fd);
+        return set_error("listen() failed");
+    }
+    return std::make_unique<HttpTransport>(fd, cfg.auth_token);
+}
+
+}  // namespace cc::mcp

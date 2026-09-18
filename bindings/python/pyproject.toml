@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "computer-control"
+version = "0.1.0"
+description = "Cross-platform desktop and mobile-simulator automation"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "computer-control contributors" }]
+keywords = ["automation", "gui", "mcp", "screenshot", "accessibility", "ios", "android"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Testing",
+]
+# No runtime dependencies on purpose: the binding is pure ctypes, so there is
+# nothing to build and nothing to conflict with.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/minhnd410/computer-control"
+Issues = "https://github.com/minhnd410/computer-control/issues"
+
+[tool.setuptools]
+packages = ["computer_control"]
+
+[tool.setuptools.package-data]
+computer_control = ["*.dylib", "*.so", "*.so.*", "*.dll", "lib/*"]

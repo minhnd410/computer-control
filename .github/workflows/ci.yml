@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A push that supersedes an in-flight run should cancel it; three OS runners
+# per commit adds up otherwise.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Linux (gcc)",    os: ubuntu-latest,  preset: "" }
+          - { name: "Linux (clang)",  os: ubuntu-latest,  preset: "-DCMAKE_CXX_COMPILER=clang++" }
+          - { name: "macOS (arm64)",  os: macos-latest,   preset: "" }
+          - { name: "macOS (x86_64)", os: macos-13,       preset: "" }
+          - { name: "Windows (msvc)", os: windows-latest, preset: "" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build clang \
+            libx11-dev libxtst-dev libxrandr-dev libxfixes-dev zlib1g-dev \
+            xvfb at-spi2-core
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      # The display-topology tests need a display. On Linux CI there is none,
+      # so one is created; macOS and Windows runners already have one.
+      - name: Test (Linux, under Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" ctest --test-dir build --output-on-failure
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: ctest --test-dir build --output-on-failure -C Release
+
+      - name: Smoke test the CLI
+        shell: bash
+        run: |
+          BIN=build/cc
+          [ -f build/Release/cc.exe ] && BIN=build/Release/cc.exe
+          "$BIN" --version
+          "$BIN" --help > /dev/null
+          # `displays` needs a real display; on Linux it runs under Xvfb above.
+          if [ "${{ runner.os }}" != "Linux" ]; then "$BIN" displays; fi
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: computer-control-${{ matrix.os }}-${{ strategy.job-index }}
+          path: |
+            build/cc
+            build/computer-control-mcp
+            build/libcomputer_control.*
+            build/Release/*.exe
+            build/Release/*.dll
+            build/Release/*.lib
+          if-no-files-found: warn
+          retention-days: 14
+
+  python:
+    name: Python binding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake libx11-dev libxtst-dev libxrandr-dev libxfixes-dev zlib1g-dev xvfb
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build the shared library
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j 4
+
+      - name: Import and drive it
+        run: |
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" python - <<'PY'
+          import os
+          os.environ["COMPUTER_CONTROL_LIB"] = os.path.abspath("build/libcomputer_control.so")
+          import sys
+          sys.path.insert(0, "bindings/python")
+          from computer_control import Session
+          with Session() as cc:
+              print("version", cc.version, cc.platform)
+              for d in cc.displays():
+                  print(" display", d.index, d.name, d.scale, d.bounds_logical)
+              png = cc.screenshot(max_dimension=320)
+              assert png[:4] == b"\x89PNG", "expected a PNG"
+              print("screenshot bytes", len(png))
+          PY
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t computer-control -f docker/Dockerfile .
+      - name: Run the capability report inside the container
+        run: docker run --rm computer-control doctor
+
+  lint:
+    name: Format and hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: clang-format
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang-format
+          find include src tests -name '*.hpp' -o -name '*.cpp' -o -name '*.h' -o -name '*.mm' \
+            | xargs clang-format --dry-run --Werror
+
+      - name: No credentials committed
+        run: |
+          # Cheap guard against the obvious mistakes; not a substitute for a
+          # real secret scanner, but it catches copy-paste accidents.
+          if git grep -nIE '(BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36})' \
+               -- . ':!.github/workflows/ci.yml'; then
+            echo "::error::a credential-looking string is committed"
+            exit 1
+          fi

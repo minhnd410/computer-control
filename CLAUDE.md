@@ -1,0 +1,108 @@
+# CLAUDE.md
+
+Guidance for Claude Code and other agents working in this repository.
+
+## What this is
+
+A C++20 core for desktop and mobile-simulator automation on macOS, Windows and Linux, exposed four ways: a native library, a stable C ABI, a `cc` CLI, and an MCP server. Everything funnels through one action dispatcher so the front-ends cannot drift.
+
+## Build and test
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure      # or ./build/cc_tests
+```
+
+Run a single check while iterating:
+
+```bash
+./build/cc doctor                # capability + permission report
+./build/cc displays              # verify DPI detection
+./build/cc screenshot --out /tmp/s.png --max_dimension 900
+```
+
+The test suite is hermetic except for `test_display.cpp`, which reads the real display topology, and a few `exec` tests that spawn `/bin/echo`. Neither needs a granted permission.
+
+## Architecture
+
+```
+include/cc/*.hpp     Public C++ API.
+include/cc/capi.h    Stable C ABI. Append-only. See "ABI rules" below.
+src/core/            Platform-independent. No OS headers here, ever.
+src/platform/<os>/   One backend per subsystem per OS. Same six files each:
+                     display, input, screen, window, a11y, system.
+src/devices/         iOS/Android/mirrored device transports.
+src/capi/actions.cpp The single action dispatcher: JSON in, JSON out.
+src/mcp/             MCP server. A schema wrapper over the dispatcher.
+src/cli/             `cc`. An argv-to-JSON wrapper over the dispatcher.
+```
+
+Adding a capability means editing **one** place: add an `ActionSpec` to the registry in `src/capi/actions.cpp` and implement it. The MCP tool list and CLI help are generated from that registry.
+
+Backends are created lazily by `Session`. A caller that only wants screenshots must never trigger an accessibility prompt.
+
+## Invariants
+
+These are the things that break subtly if you get them wrong.
+
+**1. Coordinates always carry a space.** `Space::Logical` (OS points, what input uses), `Space::Physical` (device pixels), `Space::Image` (pixels of the last capture). Never pass a bare number across a boundary. Conversion goes through `DisplayGraph`, which resolves per display — a mixed-DPI setup has no single scale factor. `Session::resolve()` is the chokepoint for anything user-supplied; it rejects points outside the desktop rather than emitting a click that silently goes nowhere.
+
+**2. Anything held must be released on every path.** Mouse buttons, modifier keys, touch contacts. Use a scope guard (`ModifierGuard` on Windows/Linux) rather than a matching call at the end of the function, because the early-return path is the one that leaves a user's desktop with Ctrl stuck down. `Session`'s destructor calls `release_all()`; so does the MCP server when the client disconnects mid-drag.
+
+**3. Emulation must announce itself.** If a platform cannot do the real thing, `gesture_support()` returns `Emulated` with the substitute named in `backend` and the caveat in `note`. Never quietly substitute. `require_native` exists so a caller can refuse.
+
+**4. Every error carries a remedy.** `Error{code, message, remedy}`. The message says what happened; the remedy says what to do, naming the exact System Settings pane, package, or udev rule. An error without a remedy is only acceptable when there genuinely is no action to take.
+
+**5. Nothing throws across the C ABI.** Every entry point in `src/capi/capi.cpp` is wrapped in `CC_GUARD_BEGIN`/`CC_GUARD_END`. An exception escaping into a Python or Node frame is undefined behaviour. The action dispatcher also catches, so a malformed JSON shape is an error response rather than a crashed server.
+
+**6. Budgets on every tree walk.** Accessibility APIs are cross-process IPC; an unresponsive app can hang a walk indefinitely. Every walk honours a wall-clock deadline and a node cap, and reports `truncated` with a reason rather than returning a plausible-looking partial tree.
+
+**7. stdout belongs to the MCP protocol.** On the stdio transport, any stray write corrupts the stream and the client drops the connection with an opaque parse error. Log to stderr.
+
+## ABI rules
+
+`include/cc/capi.h` is a published contract:
+
+- Enumerators are append-only. Existing values never change.
+- Structs are versioned by a leading `size` field. Callers set it to `sizeof` what they compiled against; the library reads only the prefix it understands. New fields go at the end.
+- Strings returned by the library are freed with `cc_string_free`, buffers with `cc_buffer_free`. Strings passed in are borrowed for the call only.
+- Error detail is thread-local (`cc_last_error_*`).
+- Bump `CC_ABI_VERSION` only for a breaking change, and update `ABI_VERSION` in `bindings/python/computer_control/_ffi.py` to match.
+
+## Platform notes worth knowing before you debug
+
+**macOS**
+- `CGDisplayCreateImage` and `CGWindowListCreateImage` are *removed* in the macOS 15 SDK, not merely deprecated. ScreenCaptureKit is the only path.
+- `AXIsProcessTrusted()` can report true while per-app inspection is still refused, returning placeholder elements whose role is `AXApplication` and whose `AXChildren` is `kAXErrorAttributeUnsupported`. `a11y_macos.mm` detects this and reports a permissions problem instead of an empty tree. Do not "fix" that by removing the check.
+- CGEvent coordinates are **points**, not pixels.
+- Multi-clicks need `kCGMouseEventClickState` set to 2 or 3; two fast single clicks are not a double click.
+- `kCGWindowListOptionOnScreenOnly` means "on the active Space", which is why device discovery lists offscreen windows.
+
+**Windows**
+- Per-monitor DPI awareness V2 must be set before the first monitor query.
+- Absolute mouse coordinates are 0–65535 over the **virtual** desktop (`SM_XVIRTUALSCREEN` and friends), not over the primary display.
+- UIPI silently discards input aimed at a higher-integrity window. `send_failed()` names this on `ERROR_ACCESS_DENIED`.
+- UIA without a `CacheRequest` issues one cross-process call per property. Always use `FindAllBuildCache`.
+
+**Linux**
+- XTest cannot produce touch contacts; `/dev/uinput` is the only route to real multi-touch, and it works on Wayland too.
+- X11 has no per-monitor scale. The order of precedence is `GDK_SCALE`/`QT_SCALE_FACTOR`, then `Xft.dpi`, then 1.0.
+- Typing rebinds a spare keycode per character and restores it afterwards. If you change that path, make sure the restore happens on the failure path too.
+
+## Style
+
+Match the surrounding code. Notable conventions:
+
+- Comments explain **why**, especially where the code looks odd because an OS API is odd. Do not narrate what the next line does.
+- `Result<T>` / `Status` for anything that can fail. No exceptions in the core.
+- 4-space indent, 100-column soft limit, `snake_case` functions, `PascalCase` types.
+- No new third-party dependencies without a strong reason. JSON, PNG, JPEG and deflate are all in-tree precisely so the library stays dependency-free; system zlib is used when found and the bundled encoder otherwise.
+
+## Security
+
+This is a public repository for a tool that can drive a desktop.
+
+- Never commit credentials, tokens, or screenshots. `.gitignore` excludes them by default; captures routinely contain password managers and private messages.
+- Shell and registry access are policy-gated in `SessionConfig`. Keep new side-effectful capabilities behind a flag.
+- Subprocesses take an argv vector and never a concatenated shell string. `devices::exec` enforces this; there is a test that a `;` in an argument is not interpreted.
