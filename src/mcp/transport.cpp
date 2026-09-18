@@ -6,6 +6,8 @@
 #include <mutex>
 #include <sstream>
 
+#include "core/json.hpp"
+#include "mcp/protocol.hpp"
 #include "mcp/server.hpp"
 
 #if defined(_WIN32)
@@ -75,6 +77,14 @@ private:
 // response. No SSE, no session resumption. Anything more belongs behind a
 // real reverse proxy, and pretending otherwise would invite exposing a desktop
 // automation server to a network it should never be on.
+//
+// 2026-07-28 dropped the session id and added `Mcp-Method` and `Mcp-Name`, so
+// that a gateway can route and authorise a call without parsing the body. The
+// obvious attack is to declare a harmless method in the headers and smuggle a
+// different one in the body, which is what HeaderMismatch (-32020) exists to
+// stop. The headers are validated when present rather than required: a header
+// that is absent cannot contradict anything, and requiring them would break
+// every pre-2026 HTTP client for no gain on a loopback socket.
 class HttpTransport final : public Transport {
 public:
     HttpTransport(socket_t listener, std::string token)
@@ -96,6 +106,7 @@ public:
 #endif
             client_ = ::accept(listener_, reinterpret_cast<sockaddr*>(&addr), &len);
             if (client_ == CC_INVALID_SOCKET) return false;
+            replied_ = false;
 
             // Reject anything that is not loopback unless the operator bound
             // elsewhere on purpose; a token is then mandatory.
@@ -104,7 +115,11 @@ public:
 
             std::string body;
             if (!parse(request, body)) {
-                respond(400, "{\"error\":\"malformed request\"}");
+                // parse() answers for itself when it rejects a request (401,
+                // or a JSON-RPC error for a bad header). Only the cases it
+                // leaves unanswered get the generic 400 - sending a second
+                // response on the same socket corrupts the exchange.
+                if (!replied_) respond(400, "{\"error\":\"malformed request\"}");
                 continue;
             }
             out = body;
@@ -198,13 +213,105 @@ private:
         }
 
         body = request.substr(header_end + 4);
-        return !body.empty();
+        if (body.empty()) return false;
+        return check_routing_headers(headers, body);
+    }
+
+    // Returns the value of `name` (given lowercased) with surrounding
+    // whitespace removed, or empty if the header is absent.
+    static std::string header_value(const std::string& headers, const std::string& lowered,
+                                    const char* name) {
+        std::string needle = "\r\n";
+        needle += name;
+        needle += ":";
+        // The first header line has no preceding CRLF, so try it separately.
+        std::size_t start;
+        const std::string first = std::string(name) + ":";
+        if (lowered.rfind(first, 0) == 0) {
+            start = first.size();
+        } else {
+            const auto pos = lowered.find(needle);
+            if (pos == std::string::npos) return {};
+            start = pos + needle.size();
+        }
+        auto end = headers.find("\r\n", start);
+        if (end == std::string::npos) end = headers.size();
+        std::string value = headers.substr(start, end - start);
+        const auto first_ch = value.find_first_not_of(" \t");
+        if (first_ch == std::string::npos) return {};
+        const auto last_ch = value.find_last_not_of(" \t");
+        return value.substr(first_ch, last_ch - first_ch + 1);
+    }
+
+    // Sends a JSON-RPC error carrying the id from the body, so the client can
+    // match it to the request it sent rather than failing the whole batch.
+    void respond_rpc_error(int status, const json::Value& id, json::Value error) {
+        json::Value out = json::Value::object();
+        out.set("jsonrpc", "2.0");
+        out.set("id", id);
+        out.set("error", std::move(error));
+        respond(status, out.dump());
+    }
+
+    bool check_routing_headers(const std::string& headers, const std::string& body) {
+        const std::string lowered = lower(headers);
+
+        const std::string version = header_value(headers, lowered, "mcp-protocol-version");
+        json::ParseError pe;
+        const json::Value msg = json::parse(body, &pe);
+        // A body this transport cannot parse is the server's problem to
+        // report, not the transport's: pass it through so the reply is a
+        // proper -32700 rather than an HTTP 400 with no id.
+        if (!pe.ok || !msg.is_object()) return true;
+        const json::Value& id = msg["id"];
+
+        if (!version.empty() && !is_supported_version(version)) {
+            respond_rpc_error(400, id, unsupported_version_error(version));
+            return false;
+        }
+
+        const std::string header_method = header_value(headers, lowered, "mcp-method");
+        const std::string body_method = msg["method"].as_string();
+        if (!header_method.empty() && !body_method.empty() && header_method != body_method) {
+            json::Value data = json::Value::object();
+            data.set("header", "Mcp-Method");
+            data.set("headerValue", header_method);
+            data.set("bodyValue", body_method);
+            json::Value error = json::Value::object();
+            error.set("code", error_codes::kHeaderMismatch);
+            error.set("message", "Mcp-Method does not match the method in the request body");
+            error.set("data", data);
+            respond_rpc_error(400, id, std::move(error));
+            return false;
+        }
+
+        // Mcp-Name names the tool, prompt or resource the method acts on. It
+        // is only meaningful for the methods that take one.
+        const std::string header_name = header_value(headers, lowered, "mcp-name");
+        if (!header_name.empty()) {
+            const std::string body_name = msg["params"]["name"].as_string();
+            if (!body_name.empty() && header_name != body_name) {
+                json::Value data = json::Value::object();
+                data.set("header", "Mcp-Name");
+                data.set("headerValue", header_name);
+                data.set("bodyValue", body_name);
+                json::Value error = json::Value::object();
+                error.set("code", error_codes::kHeaderMismatch);
+                error.set("message", "Mcp-Name does not match params.name in the request body");
+                error.set("data", data);
+                respond_rpc_error(400, id, std::move(error));
+                return false;
+            }
+        }
+        return true;
     }
 
     void respond(int status, const std::string& body) {
+        replied_ = true;
         std::ostringstream os;
         os << "HTTP/1.1 " << status << (status == 200 ? " OK" : " Error") << "\r\n"
            << "Content-Type: application/json\r\n"
+           << "MCP-Protocol-Version: " << kModernProtocol << "\r\n"
            << "Content-Length: " << body.size() << "\r\n"
            << "Connection: close\r\n"
            << "\r\n"
@@ -226,6 +333,8 @@ private:
     socket_t listener_ = CC_INVALID_SOCKET;
     socket_t client_ = CC_INVALID_SOCKET;
     std::string token_;
+    // Whether this connection has already been answered.
+    bool replied_ = false;
 };
 
 }  // namespace

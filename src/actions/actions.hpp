@@ -3,11 +3,11 @@
 
 // The single action dispatcher.
 //
-// Three front-ends need the same behaviour: the MCP server, the CLI, and the
-// C ABI's cc_batch. Rather than implement argument parsing, coordinate
-// resolution and error shaping three times (and drift), each action is defined
-// once here as JSON in / JSON out. The MCP tool layer is then a thin schema
-// wrapper, and `cc click --at 100,200` is a thin argv-to-JSON wrapper.
+// Two front-ends need the same behaviour: the MCP server and the CLI. Rather
+// than implement argument parsing, coordinate resolution and error shaping
+// twice (and drift), each action is defined once here as JSON in / JSON out.
+// The MCP tool layer is then a thin schema wrapper, and `cc click --at
+// 100,200` is a thin argv-to-JSON wrapper.
 
 #include <string>
 #include <vector>

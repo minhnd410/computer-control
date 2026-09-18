@@ -48,6 +48,7 @@ public:
     std::string handle_message(const std::string& raw);
 
 private:
+    json::Value handle_discover();
     json::Value handle_initialize(const json::Value& params);
     json::Value handle_tools_list(const json::Value& params);
     json::Value handle_tools_call(const json::Value& params, bool& is_error);
@@ -56,7 +57,11 @@ private:
 
     ServerConfig cfg_;
     std::shared_ptr<Session> session_;
-    std::atomic<bool> initialized_{false};
+    // The single piece of connection state a dual-era server keeps, and only
+    // so that a pre-2026 client which opened with `initialize` can keep
+    // sending requests without per-request metadata. Modern requests never
+    // consult it.
+    std::atomic<bool> legacy_session_{false};
     std::unique_ptr<Transport> transport_;
 };
 

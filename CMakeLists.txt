@@ -264,7 +264,8 @@ if(CC_BUILD_MCP)
     src/mcp/main.cpp
     src/mcp/server.cpp
     src/mcp/tools.cpp
-    src/mcp/transport.cpp)
+    src/mcp/transport.cpp
+    src/mcp/protocol.cpp)
   target_link_libraries(cc_mcp PRIVATE cc_static)
   set_target_properties(cc_mcp PROPERTIES OUTPUT_NAME computer-control-mcp)
 endif()
@@ -279,8 +280,21 @@ if(CC_BUILD_TESTS)
     tests/test_display.cpp
     tests/test_image.cpp
     tests/test_device.cpp
-    tests/test_text.cpp)
+    tests/test_text.cpp
+    tests/test_mcp.cpp
+    tests/test_docs.cpp
+    # The protocol layer is exercised through the real server dispatch rather
+    # than a reimplementation of it, so the tests compile the MCP front-end
+    # too. main.cpp is excluded: it is the only thing here with a main().
+    src/mcp/protocol.cpp
+    src/mcp/server.cpp
+    src/mcp/tools.cpp
+    src/mcp/transport.cpp)
   target_include_directories(cc_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+  # test_docs.cpp checks documented counts against the registry, which means
+  # reading the repository from a build tree that can be anywhere.
+  target_compile_definitions(cc_tests PRIVATE
+    CC_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(cc_tests PRIVATE cc_static)
   add_test(NAME unit COMMAND cc_tests)
 endif()

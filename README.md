@@ -57,7 +57,9 @@ Every failure names the exact next step — the settings pane, the package, the 
 
 ![Permission diagnosis](docs/media/permissions.gif)
 
-MCP is the primary contract. The CLI is the same dispatcher behind an argv parser, which makes it the fastest way to debug a tool without a client attached — `cc snapshot --raw` is exactly what the `snapshot` tool returns.
+MCP is the primary contract. The server speaks the current revision, **2026-07-28**, and falls back to **2025-06-18** for clients that have not caught up — which today is most of them. A modern request is served statelessly with no handshake; an `initialize` still works. See [protocol revisions](docs/mcp.md#protocol-revisions).
+
+The CLI is the same dispatcher behind an argv parser, which makes it the fastest way to debug a tool without a client attached — `cc snapshot --raw` is exactly what the `snapshot` tool returns.
 
 ---
 

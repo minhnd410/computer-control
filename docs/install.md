@@ -46,7 +46,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Produces `build/cc`, `build/computer-control-mcp`, `libcomputer_control.{a,so,dylib,dll}` and the public headers.
+Produces `build/cc`, `build/computer-control-mcp`, the static library `libcomputer_control.a` (`computer_control_static.lib` on Windows) and the public headers.
 
 Platform packages:
 

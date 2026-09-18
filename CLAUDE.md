@@ -5,7 +5,8 @@ Guidance for Claude Code and other agents working in this repository.
 ## What this is
 
 An MCP server for desktop and mobile-simulator automation on macOS, Windows and
-Linux, on a C++20 core. **MCP is the primary contract.** The `cc` CLI is the
+Linux, on a C++20 core. **MCP is the primary contract**, spoken at revision
+2026-07-28 with a 2025-06-18 fallback. The `cc` CLI is the
 same dispatcher behind an argv parser, kept because it is the fastest way to
 debug a tool with no client attached; the static library is there for
 embedding. Both front-ends funnel through one dispatcher so they cannot drift.
@@ -35,10 +36,6 @@ Run a single check while iterating:
 The test suite is hermetic except for `test_display.cpp`, which reads the real display topology, and a few `exec` tests that spawn `/bin/echo`. Neither needs a granted permission.
 
 ## Architecture
-
-The README is a hub: anything long lives in `docs/` and is linked from its
-table of contents. Keep the README under roughly 250 lines — when a section
-outgrows that, split it into `docs/` and leave a one-line pointer.
 
 ```
 include/cc/*.hpp     Public C++ API.
@@ -75,6 +72,8 @@ These are the things that break subtly if you get them wrong.
 
 **8. stdout belongs to the MCP protocol.** On the stdio transport, any stray write corrupts the stream and the client drops the connection with an opaque parse error. Log to stderr.
 
+**9. The server speaks two protocol eras, and must keep doing so.** 2026-07-28 is stateless: a request carrying `_meta` with a protocol version is served in isolation, and the server must not infer anything about it from earlier requests. 2025-06-18 is handshake-based, and whatever Claude Desktop and Cursor ship today still sends `initialize`, so dropping it breaks real setups. `legacy_session_` is the *only* per-connection state in the server; adding a second piece re-introduces the statefulness the revision removed. `src/mcp/protocol.cpp` decides the era, and `tests/test_mcp.cpp` drives both paths through the real dispatcher — add a case there rather than reasoning about the wire format from memory.
+
 ## Platform notes worth knowing before you debug
 
 **macOS**
@@ -96,6 +95,38 @@ These are the things that break subtly if you get them wrong.
 - XTest cannot produce touch contacts; `/dev/uinput` is the only route to real multi-touch, and it works on Wayland too.
 - X11 has no per-monitor scale. The order of precedence is `GDK_SCALE`/`QT_SCALE_FACTOR`, then `Xft.dpi`, then 1.0.
 - Typing rebinds a spare keycode per character and restores it afterwards. If you change that path, make sure the restore happens on the failure path too.
+
+## Documentation
+
+The README is a hub: anything long lives in `docs/` and is linked from its
+table of contents. Keep the README under roughly 250 lines — when a section
+outgrows that, split it into `docs/` and leave a one-line pointer. When
+splitting, watch for `#` inside fenced code blocks: a naive heading regex
+treats `# Debian / Ubuntu` in a bash block as a section boundary and silently
+drops everything after it.
+
+**State what has actually been tested, and by whom.** The README's *What has
+actually been tested* table is the project's credibility. Rules for it:
+
+- A row means a human ran that code on that machine. CI compiling it is not
+  testing it, and is reported separately.
+- Name what was exercised, not "works". "4-finger swipe, PowerShell with
+  quoted arguments" is a claim a reader can check; "gestures" is not.
+- **When you change the code a row covers, the row is stale.** Either re-test
+  it or mark it as predating the change. A row that silently keeps its claim
+  across a rewrite is worse than no row.
+- Behaviour that was attempted but not observed goes under *Partially
+  verified* with what was and was not seen. Never round it up to working.
+- Currently maintainer-tested: the author's macOS machine and one Windows 11
+  machine. Linux is CI-compiled only. Keep asking for outside reports rather
+  than quietly widening the claim.
+
+**Do not hand-maintain a number that the code already knows.** The tool counts
+in `docs/mcp.md` are checked against the registry by `tests/test_docs.cpp`,
+which also fails if a tool is never mentioned there. Adding a tool therefore
+breaks the build until the docs catch up, which is the point. If you write a
+new counted claim, pin it the same way instead of trusting the next person to
+remember.
 
 ## Style
 

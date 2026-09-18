@@ -6,11 +6,10 @@
 
 #include "actions/actions.hpp"
 #include "cc/screen.hpp"
+#include "mcp/protocol.hpp"
 
 namespace cc::mcp {
 namespace {
-
-constexpr const char* kProtocolVersion = "2025-06-18";
 
 json::Value rpc_error(const json::Value& id, int code, const std::string& message,
                       json::Value data = json::Value()) {
@@ -26,11 +25,23 @@ json::Value rpc_error(const json::Value& id, int code, const std::string& messag
     return out;
 }
 
+// For an error object already built by the protocol layer.
+json::Value rpc_error(const json::Value& id, json::Value error) {
+    json::Value out = json::Value::object();
+    out.set("jsonrpc", "2.0");
+    out.set("id", id);
+    out.set("error", std::move(error));
+    return out;
+}
+
 json::Value rpc_result(const json::Value& id, json::Value result) {
     json::Value out = json::Value::object();
     out.set("jsonrpc", "2.0");
     out.set("id", id);
-    out.set("result", std::move(result));
+    // Every result carries resultType and the server identity; 2026-07-28
+    // requires the former, and a stateless client has no handshake to have
+    // learned the latter from.
+    out.set("result", finalize_result(std::move(result)));
     return out;
 }
 
@@ -43,31 +54,44 @@ void log(const ServerConfig& cfg, const std::string& msg) {
 Server::Server(ServerConfig cfg) : cfg_(std::move(cfg)) {}
 Server::~Server() = default;
 
-json::Value Server::handle_initialize(const json::Value& params) {
-    json::Value caps = json::Value::object();
-    json::Value tools = json::Value::object();
-    tools.set("listChanged", false);
-    caps.set("tools", tools);
-
-    json::Value info = json::Value::object();
-    info.set("name", "computer-control");
-    info.set("version", build_info().version);
+// server/discover is mandatory in 2026-07-28. It is also the stdio
+// backward-compatibility probe: a dual-era client sends it first, and a
+// recognisable answer tells it this server speaks the modern protocol.
+json::Value Server::handle_discover() {
+    json::Value versions = json::Value::array();
+    for (const auto& v : supported_versions()) versions.push_back(v);
 
     json::Value out = json::Value::object();
-    // Echo the client's protocol version when we support it, so a client on an
-    // older revision is not forced to downgrade the whole session.
-    const std::string requested = params["protocolVersion"].as_string(kProtocolVersion);
-    out.set("protocolVersion", requested.empty() ? kProtocolVersion : requested);
-    out.set("capabilities", caps);
-    out.set("serverInfo", info);
+    out.set("supportedVersions", versions);
+    out.set("capabilities", server_capabilities());
     out.set("instructions", server_instructions());
-    initialized_ = true;
+    // The tool set is fixed at startup, so this is cacheable for a long time
+    // and is the same for every client.
+    add_cache_hints(out, 3600000, "public");
+    return out;
+}
+
+json::Value Server::handle_initialize(const json::Value& params) {
+    json::Value out = json::Value::object();
+    // Echo the requested version when supported. A legacy client has no
+    // fall-forward mechanism, so refusing here leaves it with nothing.
+    const std::string requested = params["protocolVersion"].as_string(kLegacyProtocol);
+    out.set("protocolVersion",
+            is_supported_version(requested) ? requested : std::string(kLegacyProtocol));
+    out.set("capabilities", server_capabilities());
+    out.set("serverInfo", server_info());
+    out.set("instructions", server_instructions());
+    legacy_session_ = true;
     return out;
 }
 
 json::Value Server::handle_tools_list(const json::Value&) {
     json::Value out = json::Value::object();
     out.set("tools", tool_definitions(cfg_));
+    // CacheableResult, required on list endpoints since 2026-07-28. The tool
+    // set cannot change while the process runs, and it does not vary by
+    // client, so it is publicly cacheable.
+    add_cache_hints(out, 3600000, "public");
     return out;
 }
 
@@ -170,30 +194,37 @@ std::string Server::handle_message(const std::string& raw) {
     json::ParseError pe;
     json::Value msg = json::parse(raw, &pe);
     if (!pe.ok) {
-        return rpc_error(json::Value(), -32700, "Parse error: " + pe.message).dump();
+        return rpc_error(json::Value(), error_codes::kParseError, "Parse error: " + pe.message)
+            .dump();
     }
 
     const json::Value& id = msg["id"];
     const std::string method = msg["method"].as_string();
     const json::Value& params = msg["params"];
     // A notification has no id and must produce no response at all; replying
-    // to one makes strict clients abort the session.
+    // to one makes strict clients abort.
     const bool is_notification = id.is_null();
 
     if (method.empty()) {
-        return is_notification ? std::string{}
-                               : rpc_error(id, -32600, "Invalid request: no method").dump();
+        return is_notification
+                   ? std::string{}
+                   : rpc_error(id, error_codes::kInvalidRequest, "Invalid request: no method")
+                         .dump();
+    }
+
+    // Notifications carry no metadata worth validating, and rejecting one is
+    // impossible anyway since no response may be sent.
+    if (!is_notification) {
+        const ContextResult ctx = classify_request(msg, legacy_session_.load());
+        if (!ctx.ok) return rpc_error(id, ctx.error).dump();
     }
 
     try {
+        if (method == "server/discover") {
+            return rpc_result(id, handle_discover()).dump();
+        }
         if (method == "initialize") {
             return rpc_result(id, handle_initialize(params)).dump();
-        }
-        if (method == "notifications/initialized" || method == "initialized") {
-            return {};
-        }
-        if (method == "ping") {
-            return rpc_result(id, json::Value::object()).dump();
         }
         if (method == "tools/list") {
             return rpc_result(id, handle_tools_list(params)).dump();
@@ -206,22 +237,40 @@ std::string Server::handle_message(const std::string& raw) {
             // the tool doing its job and reporting a problem.
             return rpc_result(id, std::move(result)).dump();
         }
+
+        // Removed in 2026-07-28 but still answered, because a legacy client
+        // will send them and has no way to discover that they are gone.
+        if (method == "notifications/initialized" || method == "initialized") {
+            legacy_session_ = true;
+            return {};
+        }
+        if (method == "ping") {
+            return rpc_result(id, json::Value::object()).dump();
+        }
+        if (method == "logging/setLevel") {
+            return rpc_result(id, json::Value::object()).dump();
+        }
+
+        // Not advertised in capabilities, so a conforming client will not ask;
+        // answering empty is friendlier than an error for one that does.
         if (method == "resources/list" || method == "prompts/list") {
             json::Value out = json::Value::object();
             out.set(method == "resources/list" ? "resources" : "prompts", json::Value::array());
+            add_cache_hints(out, 3600000, "public");
             return rpc_result(id, out).dump();
         }
-        if (method.rfind("notifications/", 0) == 0) {
-            return {};
-        }
+
+        if (method.rfind("notifications/", 0) == 0) return {};
         if (is_notification) return {};
-        return rpc_error(id, -32601, "Method not found: " + method).dump();
+        return rpc_error(id, error_codes::kMethodNotFound, "Method not found: " + method).dump();
     } catch (const std::exception& e) {
         if (is_notification) return {};
-        return rpc_error(id, -32603, std::string("Internal error: ") + e.what()).dump();
+        return rpc_error(id, error_codes::kInternalError,
+                         std::string("Internal error: ") + e.what())
+            .dump();
     } catch (...) {
         if (is_notification) return {};
-        return rpc_error(id, -32603, "Internal error").dump();
+        return rpc_error(id, error_codes::kInternalError, "Internal error").dump();
     }
 }
 
