@@ -25,6 +25,13 @@ classifiers = [
 # nothing to build and nothing to conflict with.
 dependencies = []
 
+[project.scripts]
+# These make `uvx computer-control-mcp` and `pipx run computer-control` work.
+# They locate and exec the native binary; the Python package deliberately does
+# not reimplement the server.
+computer-control-mcp = "computer_control._cli:mcp"
+computer-control = "computer_control._cli:cli"
+
 [project.urls]
 Homepage = "https://github.com/minhnd410/computer-control"
 Issues = "https://github.com/minhnd410/computer-control/issues"
@@ -33,4 +40,4 @@ Issues = "https://github.com/minhnd410/computer-control/issues"
 packages = ["computer_control"]
 
 [tool.setuptools.package-data]
-computer_control = ["*.dylib", "*.so", "*.so.*", "*.dll", "lib/*"]
+computer_control = ["*.dylib", "*.so", "*.so.*", "*.dll", "lib/*", "bin/*"]

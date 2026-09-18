@@ -967,8 +967,56 @@ ActionResult act_system(Session& s, const Value& args) {
 ActionResult act_capabilities(Session& s, const Value&) {
     json::ParseError pe;
     Value v = json::parse(s.capability_report(), &pe);
-    ActionResult r = succeed("Capability report.", v);
-    return r;
+
+    // The JSON is for programs; a human running `cc capabilities` wants to
+    // read it. Previously this returned the single word "Capability report.",
+    // which told the caller nothing at all.
+    std::string text;
+    text += std::string("computer-control ") + v["version"].as_string() + " on " +
+            v["platform"].as_string() + "\n\n";
+
+    text += "displays\n";
+    for (const auto& d : v["displays"].as_array()) {
+        char buf[200];
+        std::snprintf(buf, sizeof(buf), "  [%lld] %-24.24s %.0fx%.0f pt @%gx = %.0fx%.0f px%s\n",
+                      static_cast<long long>(d["index"].as_int()), d["name"].as_string().c_str(),
+                      d["bounds_logical"]["w"].as_double(), d["bounds_logical"]["h"].as_double(),
+                      d["scale"].as_double(), d["bounds_physical"]["w"].as_double(),
+                      d["bounds_physical"]["h"].as_double(),
+                      d["primary"].as_bool() ? "  (primary)" : "");
+        text += buf;
+    }
+
+    text += "\nbackends\n";
+    for (const auto& [name, info] : v["backends"].as_object()) {
+        text += "  " + text::pad_utf8(name, 16);
+        if (info["available"].as_bool()) {
+            text += "ok    " + info["backend"].as_string() + "\n";
+        } else {
+            text += "FAIL  " + info["error"].as_string() + "\n";
+        }
+    }
+
+    text += "\ngestures\n";
+    for (const auto& [name, info] : v["gestures"].as_object()) {
+        const std::string fidelity = info["fidelity"].as_string();
+        text += "  " + text::pad_utf8(name, 16) + text::pad_utf8(fidelity, 14) +
+                info["backend"].as_string() + "\n";
+    }
+
+    const auto& tooling = v["device_tooling"].as_array();
+    text += "\ndevice tooling\n  ";
+    if (tooling.empty()) {
+        text += "none found\n";
+    } else {
+        for (std::size_t i = 0; i < tooling.size(); ++i) {
+            if (i) text += ", ";
+            text += tooling[i].as_string();
+        }
+        text += "\n";
+    }
+
+    return succeed(text, v);
 }
 
 ActionResult act_displays(Session& s, const Value&) {

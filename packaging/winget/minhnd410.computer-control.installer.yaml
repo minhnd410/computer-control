@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: minhnd410.computer-control
+PackageVersion: 0.1.0
+InstallerType: zip
+NestedInstallerType: portable
+# Both binaries are exposed; `cc` is the CLI and computer-control-mcp is what an
+# MCP client launches.
+NestedInstallerFiles:
+  - RelativeFilePath: cc.exe
+    PortableCommandAlias: cc
+  - RelativeFilePath: computer-control-mcp.exe
+    PortableCommandAlias: computer-control-mcp
+Commands:
+  - cc
+  - computer-control-mcp
+MinimumOSVersion: 10.0.17763.0   # InjectTouchInput needs Win8+; UIA caching wants 1809+
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/minhnd410/computer-control/releases/download/v0.1.0/computer-control-windows-x86_64.zip
+    # Regenerate per release:
+    #   (Get-FileHash .\computer-control-windows-x86_64.zip -Algorithm SHA256).Hash
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+  - Architecture: arm64
+    InstallerUrl: https://github.com/minhnd410/computer-control/releases/download/v0.1.0/computer-control-windows-arm64.zip
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.6.0
