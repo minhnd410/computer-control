@@ -376,7 +376,16 @@ Result<GestureRequest> gesture_from(Session& s, const Value& args) {
         g.center = cur.value();
     }
 
-    g.fingers = static_cast<int>(args["fingers"].as_int(2));
+    // A sensible default depends on the gesture: a tap or long press is one
+    // finger, a pinch or rotate is inherently two, and a swipe is two on a
+    // trackpad. Defaulting everything to two made `long_press` report itself
+    // as emulated when the one-finger form is native.
+    const int default_fingers =
+        (g.kind == GestureKind::Tap || g.kind == GestureKind::LongPress ||
+         g.kind == GestureKind::ForcePress || g.kind == GestureKind::EdgeSwipe)
+            ? 1
+            : 2;
+    g.fingers = static_cast<int>(args["fingers"].as_int(default_fingers));
     const std::string dir = args["direction"].as_string("left");
     if (dir == "up")
         g.direction = SwipeDirection::Up;
@@ -542,7 +551,7 @@ const std::vector<ActionSpec>& registry() {
          R"({"type":"object","required":["kind"],"properties":{
             "kind":{"type":"string","enum":["tap","swipe","pan","pinch","rotate","smart_zoom","force_press","edge_swipe","long_press"]},
             "at":{"description":"Gesture centre; defaults to the pointer position."},
-            "fingers":{"type":"integer","minimum":1,"maximum":5,"default":2},
+            "fingers":{"type":"integer","minimum":1,"maximum":5,"description":"Defaults to 1 for tap/long_press/force_press/edge_swipe, 2 otherwise."},
             "direction":{"type":"string","enum":["up","down","left","right"]},
             "distance":{"type":"number","default":200},
             "scale":{"type":"number","default":2,"description":"Pinch: >1 zooms in, <1 out."},
