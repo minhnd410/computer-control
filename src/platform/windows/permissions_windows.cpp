@@ -20,11 +20,13 @@ bool process_is_elevated() {
     HANDLE token = nullptr;
     if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
     TOKEN_ELEVATION elevation{};
-    DWORD size = sizeof(elevation);
-    const BOOL okay =
-        ::GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+    DWORD returned = 0;
+    const BOOL okay = ::GetTokenInformation(token, TokenElevation, &elevation,
+                                            static_cast<DWORD>(sizeof(elevation)), &returned);
     ::CloseHandle(token);
-    return okay && elevation.TokenIsElevated;
+    // TokenIsElevated is a DWORD, so compare rather than relying on an
+    // implicit narrowing conversion that /W4 warns about.
+    return okay != FALSE && elevation.TokenIsElevated != 0;
 }
 
 bool touch_injection_available() {
@@ -38,13 +40,23 @@ bool touch_injection_available() {
 }
 
 std::string current_executable() {
-    wchar_t path[MAX_PATH]{};
-    const DWORD n = ::GetModuleFileNameW(nullptr, path, MAX_PATH);
+    // MAX_PATH is not the real limit on modern Windows; grow until the call
+    // stops truncating, which it signals by returning the buffer size.
+    std::vector<wchar_t> path(MAX_PATH);
+    DWORD n = 0;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        n = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+        if (n == 0) return {};
+        if (n < path.size()) break;
+        path.resize(path.size() * 2);
+        n = 0;
+    }
     if (n == 0) return {};
-    const int size =
-        ::WideCharToMultiByte(CP_UTF8, 0, path, static_cast<int>(n), nullptr, 0, nullptr, nullptr);
+    const int size = ::WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(n), nullptr, 0,
+                                           nullptr, nullptr);
+    if (size <= 0) return {};
     std::string out(static_cast<std::size_t>(size), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, path, static_cast<int>(n), out.data(), size, nullptr,
+    ::WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(n), out.data(), size, nullptr,
                           nullptr);
     return out;
 }
