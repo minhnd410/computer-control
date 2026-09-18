@@ -3,6 +3,7 @@
 
 #include <sstream>
 
+#include "cc/permissions.hpp"
 #include "core/json.hpp"
 
 namespace cc {
@@ -14,6 +15,23 @@ Result<std::shared_ptr<Session>> Session::create(SessionConfig cfg) {
     auto dg = DisplayGraph::create();
     if (!dg) return dg.error();
     s->displays_ = dg.value();
+
+    // Ask the OS for anything missing, before any backend has a chance to fail
+    // silently for want of it. Only what is actually missing: requesting a
+    // granted permission is a no-op that still opens a settings pane at the
+    // user, which is worse than doing nothing.
+    //
+    // This is deliberately opt-in. A prompt is a modal interruption, and a
+    // server launched by an MCP client or a CI job must not raise one nobody
+    // is there to answer - hence --prompt-permissions rather than a default.
+    if (cfg.prompt_for_permissions) {
+        for (const auto& status : check_permissions()) {
+            if (status.state == PermissionState::Denied ||
+                status.state == PermissionState::NotDetermined) {
+                (void)request_permission(status.permission);
+            }
+        }
+    }
 
     if (cfg.eager_init) {
         // Order matters: input's permission check is the one most likely to

@@ -69,7 +69,7 @@ void print_usage() {
     std::cout << R"(cc - control this computer from the shell
 
 USAGE
-  cc <command> [--key value ...]
+  cc [global options] <command> [--key value ...]
   cc <command> --json '{"...": ...}'
 
 COMMANDS
@@ -83,6 +83,7 @@ GLOBAL OPTIONS
   --out FILE         Write an image result to FILE instead of discarding it.
   --raw              Print the raw JSON result rather than the text summary.
   --no-shell         Disable the shell action for this invocation.
+  --prompt-permissions  Ask the OS for any missing permission before running.
   --help, --version
 
 ARGUMENT FORMS
@@ -112,7 +113,7 @@ EXAMPLES
 // not have to quote everything. A value that parses as JSON is used as-is,
 // which is what makes --at 100,200 and --at '[100,200]' both work.
 Value args_to_json(const std::vector<std::string>& argv, std::size_t start, std::string* out_file,
-                   bool* raw, bool* no_shell, std::string* error) {
+                   bool* raw, bool* no_shell, bool* prompt, std::string* error) {
     Value obj = Value::object();
     for (std::size_t i = start; i < argv.size(); ++i) {
         std::string key = argv[i];
@@ -201,17 +202,41 @@ Value args_to_json(const std::vector<std::string>& argv, std::size_t start, std:
 int main(int argc, char** argv) {
     std::vector<std::string> args(argv, argv + argc);
 
-    if (args.size() < 2 || args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
-        print_usage();
-        return args.size() < 2 ? 2 : 0;
-    }
-    if (args[1] == "--version") {
-        const auto b = cc::build_info();
-        std::cout << "cc " << b.version << " (" << b.platform << ", " << b.compiler << ")\n";
-        return 0;
+    // Global options may appear before the subcommand, which is what people
+    // reflexively type. They are pulled out here so `cc --prompt-permissions
+    // click ...` works as well as `cc click ... --prompt-permissions`.
+    bool leading_no_shell = false;
+    bool leading_prompt = false;
+    std::size_t command_index = 1;
+    while (command_index < args.size() && args[command_index].rfind("--", 0) == 0) {
+        const std::string& flag = args[command_index];
+        if (flag == "--help" || flag == "-h") {
+            print_usage();
+            return 0;
+        }
+        if (flag == "--version") {
+            const auto b = cc::build_info();
+            std::cout << "cc " << b.version << " (" << b.platform << ", " << b.compiler << ")\n";
+            return 0;
+        }
+        if (flag == "--no-shell") {
+            leading_no_shell = true;
+        } else if (flag == "--prompt-permissions") {
+            leading_prompt = true;
+        } else {
+            std::cerr << "cc: " << flag << " is not a global option; it must follow the "
+                      << "command.\n     Try: cc <command> " << flag << "\n";
+            return 2;
+        }
+        ++command_index;
     }
 
-    const std::string command = args[1];
+    if (command_index >= args.size() || args[command_index] == "help") {
+        print_usage();
+        return command_index >= args.size() ? 2 : 0;
+    }
+
+    const std::string command = args[command_index];
 
     if (command == "doctor") {
         // `doctor` is capabilities with a human-facing framing; it is the
@@ -239,9 +264,12 @@ int main(int argc, char** argv) {
     }
 
     std::string out_file;
-    bool raw = false, no_shell = false, error_set = false;
+    bool raw = false, no_shell = false, prompt_permissions = false, error_set = false;
     std::string error;
-    Value action_args = args_to_json(args, 2, &out_file, &raw, &no_shell, &error);
+    Value action_args = args_to_json(args, command_index + 1, &out_file, &raw, &no_shell,
+                                     &prompt_permissions, &error);
+    no_shell = no_shell || leading_no_shell;
+    prompt_permissions = prompt_permissions || leading_prompt;
     if (!error.empty()) {
         std::cerr << "cc: " << error << "\n";
         return 2;
@@ -250,6 +278,7 @@ int main(int argc, char** argv) {
 
     cc::SessionConfig cfg;
     if (no_shell) cfg.allow_shell = false;
+    cfg.prompt_for_permissions = prompt_permissions;
     cfg.allow_registry = true;  // the CLI is run by the user directly
 
     auto session = cc::Session::create(cfg);
