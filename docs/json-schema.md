@@ -163,3 +163,7 @@ it ran. `ok` is false only when the command could not be started.
 `not_found`, `timeout`, `busy`, `backend_failure`, `device_error`, `io_error`,
 `internal`. `remedy` is the actionable next step and is worth surfacing to a
 user verbatim.
+
+---
+
+[← README](../README.md)

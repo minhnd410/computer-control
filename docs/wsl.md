@@ -124,3 +124,7 @@ Microsoft's documentation and the interop path is standard, but nobody has run
 this exact configuration. If you do,
 [say so](https://github.com/minhnd410/computer-control/issues); it would be a
 genuinely useful report.*
+
+---
+
+[← README](../README.md)

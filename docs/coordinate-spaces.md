@@ -70,3 +70,7 @@ A mobile device adds a third factor. An iPhone 15 Pro is 393×852 points; its
 simulator renders at 3× into a window macOS then draws at 2×, and the user may
 have resized it. `DeviceViewport` maps device points to host points, so device
 coordinates stay stable no matter how the window is sized.
+
+---
+
+[← README](../README.md)

@@ -85,3 +85,7 @@ browser through this one.
   native, emulated or unsupported, and names the substitution.
 - **No telemetry.** Both references ship optional PostHog analytics. This has
   no network code outside what a tool call explicitly performs.
+
+---
+
+[← README](../README.md)

@@ -26,6 +26,10 @@ The test suite is hermetic except for `test_display.cpp`, which reads the real d
 
 ## Architecture
 
+The README is a hub: anything long lives in `docs/` and is linked from its
+table of contents. Keep the README under roughly 250 lines — when a section
+outgrows that, split it into `docs/` and leave a one-line pointer.
+
 ```
 include/cc/*.hpp     Public C++ API.
 include/cc/capi.h    Stable C ABI. Append-only. See "ABI rules" below.
@@ -72,15 +76,37 @@ These are the things that break subtly if you get them wrong.
 - Error detail is thread-local (`cc_last_error_*`).
 - Bump `CC_ABI_VERSION` only for a breaking change, and update `ABI_VERSION` in `bindings/python/computer_control/_ffi.py` to match.
 
-## Verification status
+## Verification status, and keeping it honest
 
-As of v0.1.0: macOS and Linux have been exercised against a real desktop; the
-Windows backend has only been compiled and unit-tested, never run. The Linux
-`uinput` native-gesture path is also unrun, because the container it was tested
-in has no writable `/dev/uinput`. Treat both as plausible rather than proven.
+The README has a **"What has actually been tested"** table listing the exact OS
+versions a human has run this on, who ran it, and what they exercised. It is
+the most load-bearing table in the documentation, because everything else reads
+as a statement of fact about three platforms when only some of it has been
+observed.
 
-This matters when reading the platform notes below: the macOS ones were learned
-by hitting them, the Windows ones come from the documented API contracts.
+**Maintaining that table is part of the work, not an afterthought:**
+
+- When you verify behaviour on a machine, add or update the row — the OS
+  version, who tested it, and specifically what was exercised. "macOS" is not
+  useful; "macOS 26.6, Apple silicon, capture + pointer + accessibility tree"
+  is.
+- When you add a capability, ask whether it has been *run* or only compiled. If
+  only compiled, say so in the row and in the commit message. Do not let a new
+  feature quietly inherit another platform's tested status.
+- When a platform is still unrun, keep it in the **"Not yet exercised by
+  anyone"** list. Removing an item from that list is a claim; make it only when
+  someone has actually run it.
+- If a contributor reports running it somewhere new, add their row and credit
+  them.
+
+Current state: macOS 26.6 on Apple silicon and Windows 11 have been
+maintainer-tested; Linux has been exercised under Xvfb in a container. The
+Linux `/dev/uinput` native-gesture path, macOS on Intel, and every non-Debian
+distribution are unrun.
+
+This also matters when reading the platform notes below: the macOS ones were
+learned by hitting them, the Windows ones come from the documented API
+contracts.
 
 ## Platform notes worth knowing before you debug
 

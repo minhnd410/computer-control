@@ -37,13 +37,30 @@ typed access rather than the JSON path.
   geometry, codecs and parsing are all testable without a desktop; that is why
   they live in `src/core/`.
 
-## Platform work
+## The most useful contribution: run it somewhere new
 
-Nobody has run the Windows backend yet — it compiles and passes the hermetic
-tests on CI, and that is all. The Linux `uinput` native-gesture path is in the
-same position. If you are the first to actually exercise either, that is a
-genuinely useful contribution even if you change no code; please say so in an
-issue.
+The README has a table of the exact OS versions this has been run on. It is
+short, and every row was added by someone actually running the thing.
+
+If you use this anywhere not in that table — another Windows build, a KDE or
+Wayland session, an Intel Mac, a Raspberry Pi, a BSD, a physical Android phone
+over scrcpy, an iPad simulator — please
+[open an issue](https://github.com/minhnd410/computer-control/issues) with:
+
+```bash
+cc doctor          # capabilities, backends, permissions
+cc capabilities    # per-gesture fidelity
+```
+
+and a line on what worked and what did not. That is a real contribution even
+with no code attached, and it is the only way the table grows. If you send a
+PR, add your row to it and credit yourself.
+
+Specifically unrun today: the Linux `/dev/uinput` native-gesture path (needs a
+host with a writable uinput device), macOS on Intel, and every non-Debian
+distribution.
+
+## Platform work
 
 You can only properly test the backend for the OS you are on. That is fine —
 say in the PR which platforms you exercised. CI builds all three and runs the
