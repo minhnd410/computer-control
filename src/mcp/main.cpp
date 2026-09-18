@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "actions/actions.hpp"
+#include "mcp/protocol.hpp"
 #include "mcp/server.hpp"
 
 namespace {
@@ -40,6 +41,11 @@ SAFETY
   --allow-registry           Permit Windows registry writes (off by default).
   --max-capture-dimension N  Downscale captures so the longest side is N px.
                              Default 1600; 0 disables downscaling.
+
+PROTOCOL
+  Speaks MCP 2026-07-28, and falls back to 2025-06-18 for clients that open
+  with an `initialize` handshake. No flag selects between them: the era is
+  decided per request by how the client opens. `--version` prints both.
 
 OTHER
   --prompt-permissions       Ask the OS for accessibility/recording access on
@@ -111,6 +117,11 @@ int main(int argc, char** argv) {
             const auto b = cc::build_info();
             std::cout << "computer-control " << b.version << " (" << b.platform << ", "
                       << b.compiler << ")\n";
+            // A client that refuses to connect is usually a protocol mismatch,
+            // and this is the first thing worth checking.
+            std::cout << "MCP protocol:";
+            for (const auto& v : cc::mcp::supported_versions()) std::cout << " " << v;
+            std::cout << "\n";
             return 0;
         } else if (arg == "--list-tools") {
             // The whole registry, including tools that are gated off by
