@@ -83,23 +83,23 @@ Four ways to install, with real trade-offs. Pick by what you need, not by what l
 | **Native multi-touch** | yes | yes | yes (with `--device /dev/uinput`) | yes |
 | **Startup time** | ~5 ms | ~5 ms | ~5 ms + container | ~30 ms (ctypes) |
 | **Customisable build flags** | no | yes | yes | no |
-| **Signed / notarised** | see releases | you sign it | n/a | n/a |
+| **Signed / notarised** | not yet — see below | you sign it | n/a | n/a |
 | **Best for** | trying it out, CI runners | contributors, custom flags | headless CI, sandboxed scraping | scripting, notebooks |
 
 <details>
 <summary><b>Prebuilt binary</b> — fastest path, no toolchain</summary>
 
-Download the archive for your platform from [Releases](https://github.com/minhnd410/computer-control/releases), extract, and put `cc` and `computer-control-mcp` on your `PATH`.
+> **No tagged release yet.** Until there is one, the closest thing is the build artifacts attached to every green CI run: open the latest run under [Actions](https://github.com/minhnd410/computer-control/actions/workflows/ci.yml), scroll to **Artifacts**, and download the archive for your platform. Building from source is the supported path for now.
+
+Once extracted, put `cc` and `computer-control-mcp` on your `PATH`:
 
 ```bash
-# macOS (Apple silicon)
-curl -fsSL https://github.com/minhnd410/computer-control/releases/latest/download/computer-control-macos-arm64.tar.gz | tar xz
 sudo mv cc computer-control-mcp /usr/local/bin/
 ```
 
 **Advantages** — no compiler, no dependencies, one file to delete when you are done. Starts in milliseconds, which matters when an agent invokes it repeatedly.
 
-**Limitations** — you get the flags we chose. The macOS build is notarised, but on first run you may still need to approve it in System Settings. Because permissions on macOS are granted per binary, replacing the file with a new release means re-granting Accessibility and Screen Recording.
+**Limitations** — you get the flags CI chose. CI artifacts are **not code-signed or notarised**, so macOS Gatekeeper will quarantine them (`xattr -d com.apple.quarantine cc` to clear it) and the Accessibility grant will not persist across downloads, because an unsigned binary's TCC identity is its code hash. If you intend to keep the grant, build from source with `CC_CODESIGN_IDENTITY` set — see the [macOS permissions](#macos) section.
 
 </details>
 
@@ -170,9 +170,13 @@ docker run --rm --network host -e ADB_SERVER_SOCKET=tcp:host.docker.internal:503
 <details>
 <summary><b>Python package</b> — for scripting</summary>
 
-```bash
-pip install computer-control
-```
+> **Not on PyPI yet.** Install it from the checkout alongside a local build:
+>
+> ```bash
+> cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+> pip install -e bindings/python
+> export COMPUTER_CONTROL_LIB=$PWD/build/libcomputer_control.dylib   # .so on Linux
+> ```
 
 ```python
 from computer_control import Session
@@ -192,7 +196,7 @@ COMPUTER_CONTROL_LIB=$PWD/build/libcomputer_control.dylib python my_script.py
 
 **Advantages** — the nicest API of the four, no compiler needed, integrates with pytest and notebooks.
 
-**Limitations** — roughly 30 ms of interpreter startup, and each call crosses the ctypes boundary (microseconds, so irrelevant next to the OS calls themselves). The wheel must match your platform.
+**Limitations** — roughly 30 ms of interpreter startup, and each call crosses the ctypes boundary (microseconds, so irrelevant next to the OS calls themselves). Until a wheel is published you need a local build for the library to point at. Note that the OS permission belongs to the **Python interpreter**, not to `cc` — see the [binding README](bindings/python/README.md).
 
 </details>
 

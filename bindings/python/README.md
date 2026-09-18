@@ -2,9 +2,14 @@
 
 Cross-platform desktop and mobile-simulator automation.
 
-```bash
-pip install computer-control
-```
+> **Not published to PyPI yet.** Install from a checkout, alongside a local
+> build of the shared library:
+>
+> ```bash
+> cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+> pip install -e bindings/python
+> export COMPUTER_CONTROL_LIB=$PWD/build/libcomputer_control.dylib   # .so on Linux
+> ```
 
 ```python
 from computer_control import Session
