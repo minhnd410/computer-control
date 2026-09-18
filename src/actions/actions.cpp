@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "capi/actions.hpp"
+#include "actions/actions.hpp"
 
 #include "core/text.hpp"
 

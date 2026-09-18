@@ -1,22 +1,26 @@
 # Examples
 
-Runnable against a local build:
+Shell scripts driving the `cc` CLI, and one C++ program using the library
+directly. Build first:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
-export COMPUTER_CONTROL_LIB=$PWD/build/libcomputer_control.dylib   # .so on Linux
-export PYTHONPATH=$PWD/bindings/python
-python examples/01_capabilities.py
 ```
 
 | | |
 |---|---|
-| `01_capabilities.py` | What this machine can do, and what is missing. Start here. |
-| `02_coordinate_spaces.py` | The Retina/scaling trap, and how the space tag avoids it. |
-| `03_gestures.py` | Fidelity-aware gestures; refuses rather than faking. |
-| `04_device.py` | Drive an iOS simulator or Android emulator in device points. |
-| `05_batch.cpp` | The C++ API and batching, for comparison with the bindings. |
-| `06_permissions.py` | What the OS is allowing, and why a macOS grant can look present but not work. |
+| `01_capabilities.sh` | What this machine can do, and what is missing. Start here. |
+| `02_coordinate_spaces.sh` | The Retina trap, and how the space tag avoids it. |
+| `03_gestures.sh` | Fidelity-aware gestures; refuses rather than faking. |
+| `04_device.sh` | Drive an iOS simulator or Android emulator in device points. |
+| `05_library.cpp` | The C++ API directly, for embedding. |
 
-Each one is read-only or confines itself to the pointer unless you pass
-`--act`, so running them cannot disturb a desktop you care about.
+Every script is read-only unless you pass `--act`, so running one cannot
+disturb a desktop you care about.
+
+For scripting from another language, drive the CLI with `--raw` and parse the
+JSON — every action returns the same structured payload the MCP tools do:
+
+```bash
+cc windows --raw | jq '.result.windows[] | select(.focused)'
+```

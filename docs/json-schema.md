@@ -1,6 +1,6 @@
 # JSON schema
 
-The C ABI returns JSON for anything whose shape is open-ended: window lists,
+The MCP tools and `cc --raw` return JSON for anything whose shape is open-ended: window lists,
 accessibility trees, device inventories, shell results. This document is the
 contract for those payloads.
 
@@ -8,7 +8,7 @@ contract for those payloads.
 Treat an unknown field as ignorable, and never assume an optional field is
 present.
 
-Every `cc_*` call that produces JSON wraps the payload:
+Every action that produces JSON wraps the payload:
 
 ```json
 { "ok": true, "text": "human-readable summary", "result": { ... } }

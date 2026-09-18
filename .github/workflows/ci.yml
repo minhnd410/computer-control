@@ -73,51 +73,13 @@ jobs:
           path: |
             build/cc
             build/computer-control-mcp
-            build/libcomputer_control.*
+            build/libcomputer_control.a
             build/Release/*.exe
             build/Release/*.dll
             build/Release/*.lib
             build/Release/*.pdb
           if-no-files-found: warn
           retention-days: 14
-
-  python:
-    name: Python binding
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake libx11-dev libxtst-dev libxrandr-dev libxfixes-dev zlib1g-dev xvfb
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Build the shared library
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j 4
-
-      - name: Import and drive it
-        run: |
-          xvfb-run -a --server-args="-screen 0 1920x1080x24" python - <<'PY'
-          import os
-          os.environ["COMPUTER_CONTROL_LIB"] = os.path.abspath("build/libcomputer_control.so")
-          import sys
-          sys.path.insert(0, "bindings/python")
-          from computer_control import Session
-          with Session() as cc:
-              print("version", cc.version, cc.platform)
-              for d in cc.displays():
-                  print(" display", d.index, d.name, d.scale, d.bounds_logical)
-              png = cc.screenshot(max_dimension=320)
-              assert png[:4] == b"\x89PNG", "expected a PNG"
-              print("screenshot bytes", len(png))
-          PY
 
   docker:
     name: Docker image

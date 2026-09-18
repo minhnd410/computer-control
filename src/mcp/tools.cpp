@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <algorithm>
 
-#include "capi/actions.hpp"
+#include "actions/actions.hpp"
 #include "mcp/server.hpp"
 
 namespace cc::mcp {

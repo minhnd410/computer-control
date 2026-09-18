@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "capi/actions.hpp"
+#include "actions/actions.hpp"
 #include "cc/permissions.hpp"
 #include "cc/session.hpp"
 #include "core/json.hpp"

@@ -5,7 +5,7 @@
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
 
-**One C++20 core for driving a desktop — and the phones on it.** macOS, Windows and Linux, plus iOS simulators, Android emulators and mirrored handsets, behind a single API that ships as a native library, a stable C ABI, a CLI, and an MCP server.
+**An MCP server for driving a desktop — and the phones on it.** macOS, Windows and Linux, plus iOS simulators, Android emulators and mirrored handsets, on a single C++20 core. Ships as the MCP server, a `cc` CLI for debugging it, and a static library for embedding.
 
 ```bash
 cc permissions --request                # ask the OS for what it needs
@@ -57,7 +57,7 @@ Every failure names the exact next step — the settings pane, the package, the 
 
 ![Permission diagnosis](docs/media/permissions.gif)
 
-Everything is written once in C++20 and exposed through a stable C ABI, so the Python binding, the CLI and the MCP server are thin shells over identical behaviour. There is no second implementation to drift.
+MCP is the primary contract. The CLI is the same dispatcher behind an argv parser, which makes it the fastest way to debug a tool without a client attached — `cc snapshot --raw` is exactly what the `snapshot` tool returns.
 
 ---
 
@@ -158,7 +158,9 @@ pinch.scale = 2.0;
 input->gesture(pinch);
 ```
 
-The C ABI in [`include/cc/capi.h`](include/cc/capi.h) is the stable surface: enumerators are append-only, structs are versioned by a leading `size` field, nothing throws, and errors are thread-local.
+`Session` owns the backends and guarantees that everything held — mouse buttons, modifier keys, touch contacts — is released when it is destroyed, including on an exception path.
+
+There is no C ABI or Python binding any more; they were surface maintained for a use case this project does not have. To drive it from another language, run the CLI with `--raw` and parse the JSON, which is byte-for-byte what the MCP tool returns.
 
 ---
 
@@ -178,20 +180,19 @@ This library can do anything the user in front of the machine can do.
 ## Project layout
 
 ```
-include/cc/        Public headers; capi.h is the stable C ABI
+include/cc/        Public C++ headers
 src/core/          Platform-independent: coordinate math, motion and gesture
                    geometry, JSON, PNG/JPEG codecs, deflate, UTF-8
 src/platform/      macos/ (CGEvent, ScreenCaptureKit, AX)
                    windows/ (SendInput, InjectTouchInput, UIA, GDI)
                    linux/ (XTest, uinput, EWMH, AT-SPI2)
 src/devices/       Simulator, emulator and mirrored-device transports
-src/capi/          C ABI plus the shared action dispatcher
+src/actions/       The shared action dispatcher: JSON in, JSON out
 src/mcp/ src/cli/  MCP server and the `cc` command
-bindings/python/   ctypes binding
 packaging/         curl installer, Homebrew formula, winget manifests
 ```
 
-Every front-end funnels through one action dispatcher (`src/capi/actions.cpp`), so the CLI, the MCP server and `cc_batch` cannot drift apart.
+Both front-ends funnel through one action dispatcher (`src/actions/actions.cpp`), so the CLI and the MCP server cannot drift apart. Adding a capability is one `ActionSpec` there.
 
 ---
 
@@ -216,10 +217,10 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 | [Devices](docs/devices.md) | iOS simulators, Android emulators, mirrored handsets. |
 | [WSL](docs/wsl.md) | Why the server must run on the Windows side. |
 | [Coordinate spaces](docs/coordinate-spaces.md) | Logical vs physical vs image, mixed DPI, device points. |
-| [JSON schema](docs/json-schema.md) | Every JSON payload the C ABI and MCP tools return. |
+| [JSON schema](docs/json-schema.md) | Every JSON payload the MCP tools and `cc --raw` return. |
 | [Tool comparison](docs/tool-comparison.md) | What came from Windows-MCP and macOS-MCP, and what did not. |
 | [Docker](docker/README.md) | What the container can and cannot do. |
-| [examples/](examples/) | Runnable: capabilities, coordinate spaces, gestures, devices, permissions. |
+| [examples/](examples/) | Runnable: capabilities, coordinate spaces, gestures, devices. |
 | [tools/make_demo_gif.py](tools/make_demo_gif.py) | Regenerates the GIFs above from real command output. |
 
 ---

@@ -4,7 +4,17 @@ Guidance for Claude Code and other agents working in this repository.
 
 ## What this is
 
-A C++20 core for desktop and mobile-simulator automation on macOS, Windows and Linux, exposed four ways: a native library, a stable C ABI, a `cc` CLI, and an MCP server. Everything funnels through one action dispatcher so the front-ends cannot drift.
+An MCP server for desktop and mobile-simulator automation on macOS, Windows and
+Linux, on a C++20 core. **MCP is the primary contract.** The `cc` CLI is the
+same dispatcher behind an argv parser, kept because it is the fastest way to
+debug a tool with no client attached; the static library is there for
+embedding. Both front-ends funnel through one dispatcher so they cannot drift.
+
+There is deliberately no C ABI and no Python binding. They existed, and were
+removed as surface maintained for a use case this project does not have. If
+something needs to drive this from another language, it runs the CLI with
+`--raw` and parses the JSON, which is byte-for-byte what the MCP tool returns.
+Do not reintroduce a second binding without a concrete consumer.
 
 ## Build and test
 
@@ -32,17 +42,16 @@ outgrows that, split it into `docs/` and leave a one-line pointer.
 
 ```
 include/cc/*.hpp     Public C++ API.
-include/cc/capi.h    Stable C ABI. Append-only. See "ABI rules" below.
 src/core/            Platform-independent. No OS headers here, ever.
 src/platform/<os>/   One backend per subsystem per OS. Same six files each:
                      display, input, screen, window, a11y, system.
 src/devices/         iOS/Android/mirrored device transports.
-src/capi/actions.cpp The single action dispatcher: JSON in, JSON out.
+src/actions/         The single action dispatcher: JSON in, JSON out.
 src/mcp/             MCP server. A schema wrapper over the dispatcher.
 src/cli/             `cc`. An argv-to-JSON wrapper over the dispatcher.
 ```
 
-Adding a capability means editing **one** place: add an `ActionSpec` to the registry in `src/capi/actions.cpp` and implement it. The MCP tool list and CLI help are generated from that registry.
+Adding a capability means editing **one** place: add an `ActionSpec` to the registry in `src/actions/actions.cpp` and implement it. The MCP tool list and CLI help are generated from that registry.
 
 Backends are created lazily by `Session`. A caller that only wants screenshots must never trigger an accessibility prompt.
 
@@ -58,61 +67,13 @@ These are the things that break subtly if you get them wrong.
 
 **4. Every error carries a remedy.** `Error{code, message, remedy}`. The message says what happened; the remedy says what to do, naming the exact System Settings pane, package, or udev rule. An error without a remedy is only acceptable when there genuinely is no action to take.
 
-**5. Nothing throws across the C ABI.** Every entry point in `src/capi/capi.cpp` is wrapped in `CC_GUARD_BEGIN`/`CC_GUARD_END`. An exception escaping into a Python or Node frame is undefined behaviour. The action dispatcher also catches, so a malformed JSON shape is an error response rather than a crashed server.
+**5. Nothing throws out of the dispatcher.** `actions::run` catches everything, so a malformed JSON shape is an error response rather than a crashed server. An exception reaching the stdio loop takes the MCP session down with no diagnostic the client can show.
 
 **6. Budgets on every tree walk.** Accessibility APIs are cross-process IPC; an unresponsive app can hang a walk indefinitely. Every walk honours a wall-clock deadline and a node cap, and reports `truncated` with a reason rather than returning a plausible-looking partial tree.
 
 **7. Never truncate text by bytes.** printf's `%.28s` cuts mid-character in UTF-8, and one split character invalidates a whole JSON document — which on the stdio transport drops the connection with a parse error nowhere near the cause. Use `text::truncate_utf8` / `text::pad_utf8`. `json::escape` also sanitises as a backstop, but the backstop is not the fix.
 
 **8. stdout belongs to the MCP protocol.** On the stdio transport, any stray write corrupts the stream and the client drops the connection with an opaque parse error. Log to stderr.
-
-## ABI rules
-
-`include/cc/capi.h` is a published contract:
-
-- Enumerators are append-only. Existing values never change.
-- Structs are versioned by a leading `size` field. Callers set it to `sizeof` what they compiled against; the library reads only the prefix it understands. New fields go at the end.
-- Strings returned by the library are freed with `cc_string_free`, buffers with `cc_buffer_free`. Strings passed in are borrowed for the call only.
-- Error detail is thread-local (`cc_last_error_*`).
-- Bump `CC_ABI_VERSION` only for a breaking change, and update `ABI_VERSION` in `bindings/python/computer_control/_ffi.py` to match.
-
-## Verification status, and keeping it honest
-
-The README has a **"What has actually been tested"** table listing the exact OS
-versions a human has run this on, who ran it, and what they exercised. It is
-the most load-bearing table in the documentation, because everything else reads
-as a statement of fact about three platforms when only some of it has been
-observed.
-
-**Maintaining that table is part of the work, not an afterthought:**
-
-- When you verify behaviour on a machine, add or update the row — the OS
-  version, who tested it, and specifically what was exercised. "macOS" is not
-  useful; "macOS 26.6, Apple silicon, capture + pointer + accessibility tree"
-  is.
-- When you add a capability, ask whether it has been *run* or only compiled. If
-  only compiled, say so in the row and in the commit message. Do not let a new
-  feature quietly inherit another platform's tested status.
-- When a platform is still unrun, keep it in the **"Not yet exercised by
-  anyone"** list. Removing an item from that list is a claim; make it only when
-  someone has actually run it.
-- **Rewriting a code path invalidates the row that covered it.** Windows was
-  listed as tested for PowerShell and multi-finger swipes; both turned out to
-  be broken and were replaced, so the row now says "before the current code"
-  and names what needs re-testing. A tested row is about a specific commit, not
-  a platform in perpetuity.
-- If a contributor reports running it somewhere new, add their row and credit
-  them.
-
-Current state: macOS 26.6 on Apple silicon is maintainer-tested and Linux has
-been exercised under Xvfb in a container. Windows 11 was tested only before the
-PowerShell and multi-finger-swipe rewrites, so it needs a re-test. The Linux
-`/dev/uinput` native-gesture path, macOS on Intel, and every non-Debian
-distribution are unrun.
-
-This also matters when reading the platform notes below: the macOS ones were
-learned by hitting them, the Windows ones come from the documented API
-contracts.
 
 ## Platform notes worth knowing before you debug
 

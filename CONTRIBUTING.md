@@ -18,10 +18,9 @@ System packages are listed in the README's build-from-source section.
 
 ## Adding a capability
 
-Add an `ActionSpec` to the registry in `src/capi/actions.cpp` and implement the
-handler. The MCP tool list and CLI help are generated from that registry, so
-one edit exposes it everywhere. Only add a C ABI entry point if a binding needs
-typed access rather than the JSON path.
+Add an `ActionSpec` to the registry in `src/actions/actions.cpp` and implement
+the handler. The MCP tool list and the CLI help are generated from that
+registry, so one edit exposes it in both.
 
 ## What a good change looks like
 

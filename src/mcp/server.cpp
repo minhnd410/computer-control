@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <iostream>
 
-#include "capi/actions.hpp"
+#include "actions/actions.hpp"
 #include "cc/screen.hpp"
 
 namespace cc::mcp {

@@ -18,7 +18,6 @@ endif()
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
-option(CC_BUILD_SHARED   "Build the shared library exposing the C ABI" ON)
 option(CC_BUILD_CLI      "Build the cc command-line tool"              ON)
 option(CC_BUILD_MCP      "Build the MCP server"                        ON)
 option(CC_BUILD_TESTS    "Build tests"                                 ON)
@@ -67,9 +66,8 @@ set(CC_CORE_SOURCES
   src/devices/device_onscreen.cpp
   src/devices/device_ios.cpp
   src/devices/device_android.cpp
-  src/capi/capi.cpp
-  src/capi/actions.cpp
-  src/capi/actions_device.cpp
+  src/actions/actions.cpp
+  src/actions/actions_device.cpp
 )
 
 if(CC_PLATFORM STREQUAL "macos")
@@ -215,36 +213,8 @@ set(CC_ALL_SOURCES ${CC_CORE_SOURCES} ${CC_PLATFORM_SOURCES})
 add_library(cc_static STATIC ${CC_ALL_SOURCES})
 target_link_libraries(cc_static PUBLIC cc_config)
 cc_apply_build_flags(cc_static)
-# On Unix the two libraries coexist as libcomputer_control.a and
-# libcomputer_control.so. On Windows they would both want
-# computer_control.lib - the static archive and the DLL's *import* library -
-# and one silently overwrites the other. When the import library wins, linking
-# cc_static resolves only the dllexported C ABI and every C++ symbol comes back
-# as an unresolved external, with nothing in the build output to explain it.
-if(WIN32)
-  set_target_properties(cc_static PROPERTIES OUTPUT_NAME computer_control_static)
-else()
-  set_target_properties(cc_static PROPERTIES OUTPUT_NAME computer_control)
-endif()
+set_target_properties(cc_static PROPERTIES OUTPUT_NAME computer_control)
 add_library(cc::static ALIAS cc_static)
-
-if(CC_BUILD_SHARED)
-  add_library(cc_shared SHARED ${CC_ALL_SOURCES})
-  target_link_libraries(cc_shared PUBLIC cc_config)
-  cc_apply_build_flags(cc_shared)
-  # Only the shared build exports the C ABI; defining this for the static
-  # build would mark every entry point dllexport in a .lib, which is wrong.
-  target_compile_definitions(cc_shared PRIVATE CC_BUILDING_SHARED=1)
-  set_target_properties(cc_shared PROPERTIES
-    OUTPUT_NAME computer_control
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    C_VISIBILITY_PRESET hidden
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON
-    WINDOWS_EXPORT_ALL_SYMBOLS OFF)
-  add_library(cc::shared ALIAS cc_shared)
-endif()
 
 # Link-time optimization.
 #
@@ -264,9 +234,6 @@ if(CC_ENABLE_LTO)
     find_program(CC_LLD_PROGRAM NAMES lld ld.lld)
     if(CC_LLD_PROGRAM)
       target_link_options(cc_static PUBLIC -fuse-ld=lld)
-      if(TARGET cc_shared)
-        target_link_options(cc_shared PUBLIC -fuse-ld=lld)
-      endif()
       message(STATUS "computer-control: LTO enabled, linking with lld")
     else()
       set(CC_IPO_OK OFF)
@@ -278,9 +245,6 @@ if(CC_ENABLE_LTO)
 
   if(CC_IPO_OK)
     set_property(TARGET cc_static PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
-    if(TARGET cc_shared)
-      set_property(TARGET cc_shared PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
-    endif()
   else()
     message(STATUS "computer-control: building without LTO")
   endif()
@@ -334,10 +298,6 @@ endif()
 include(GNUInstallDirs)
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(TARGETS cc_static ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-if(CC_BUILD_SHARED)
-  install(TARGETS cc_shared LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif()
 if(CC_BUILD_CLI)
   install(TARGETS cc_cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()

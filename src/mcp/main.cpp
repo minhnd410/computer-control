@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "capi/actions.hpp"
+#include "actions/actions.hpp"
 #include "mcp/server.hpp"
 
 namespace {

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 //
-// The C++ API, and why batching matters.
+// Using the library directly, for embedding it in a C++ program.
 //
 // Build against a local tree:
-//   c++ -std=c++20 -Iinclude examples/05_batch.cpp build/libcomputer_control.a \
+//   c++ -std=c++20 -Iinclude -Isrc examples/05_library.cpp build/libcomputer_control.a \
 //       -framework CoreGraphics -framework ApplicationServices -framework Foundation \
-//       -framework AppKit -framework ScreenCaptureKit -framework IOKit -lz -o batch
+//       -framework AppKit -framework ScreenCaptureKit -framework IOKit -lz -o library_demo
 //
 // Read-only: it captures and reports, and only moves the pointer.
 
