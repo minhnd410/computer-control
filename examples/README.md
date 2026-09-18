@@ -16,6 +16,7 @@ python examples/01_capabilities.py
 | `03_gestures.py` | Fidelity-aware gestures; refuses rather than faking. |
 | `04_device.py` | Drive an iOS simulator or Android emulator in device points. |
 | `05_batch.cpp` | The C++ API and batching, for comparison with the bindings. |
+| `06_permissions.py` | What the OS is allowing, and why a macOS grant can look present but not work. |
 
 Each one is read-only or confines itself to the pointer unless you pass
 `--act`, so running them cannot disturb a desktop you care about.

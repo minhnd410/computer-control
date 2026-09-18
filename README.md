@@ -231,7 +231,7 @@ Over HTTP on loopback, with a bearer token:
 CC_AUTH_TOKEN=$(openssl rand -hex 16) computer-control-mcp --transport http --port 8765
 ```
 
-30 tools exist; 29 are advertised by default, because `registry` stays hidden unless you pass `--allow-registry`. A tool that is switched off is not listed at all rather than listed and refusing, so the model's attention is not spent on it.
+31 tools exist; 30 are advertised by default, because `registry` stays hidden unless you pass `--allow-registry`. A tool that is switched off is not listed at all rather than listed and refusing, so the model's attention is not spent on it.
 
 `capabilities` first, then `snapshot` to get numbered elements, then act on them by label rather than by pixel. `batch` runs a predictable sequence in one round trip, which is usually the difference between a snappy agent and a sluggish one.
 

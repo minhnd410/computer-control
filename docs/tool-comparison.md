@@ -61,6 +61,7 @@ browser through this one.
 | Tool | Why it exists |
 |---|---|
 | `capabilities` | Per-gesture fidelity, missing permissions, detected tooling. Nothing equivalent in either reference. |
+| `permissions` | Functional permission probe plus the responsible-process diagnosis, and a request path. macOS-MCP prompts on startup; neither reference can explain why a grant that looks present does not work. |
 | `gesture` | Multi-touch as a first-class operation: pinch, rotate, n-finger swipe and pan, force press, edge swipe. |
 | `stroke` | Freehand paths with pressure, dwell and optional spline smoothing. Drawing, signatures, lasso selection. |
 | `drag` | An explicit press-travel-release with the dwell and settle timing that drag-and-drop actually needs. |

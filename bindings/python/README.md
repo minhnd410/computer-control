@@ -19,6 +19,33 @@ with Session() as cc:
 The binding is pure `ctypes` over the project's C ABI — no compiled extension
 and no build step, so it works on CPython and PyPy alike.
 
+## macOS permissions
+
+The permission belongs to **the process that loads the library**, which for a
+script is the Python interpreter — not `cc`, and not the wheel. So the binary
+to grant is something like:
+
+```
+/opt/homebrew/.../Python.framework/Versions/3.14/Resources/Python.app
+```
+
+`cc.batch([{"action": "permissions"}])` prints the exact path, and whether the
+grant is being attributed to a parent process instead:
+
+```python
+with Session() as cc:
+    report = cc.batch([{"action": "permissions"}])["steps"][0]["result"]
+    print(report["executable"])                      # what to grant
+    print(report.get("permissions_attributed_to"))   # e.g. "iTerm2"
+```
+
+A script run from a granted terminal usually inherits enough to work. If
+element queries come back empty while `accessibility` reports granted, that
+inheritance is the reason — see the main README's macOS section.
+
+Pass `{"request": True}` to prompt for anything missing. Grants are read at
+process launch, so restart Python afterwards.
+
 ## Coordinate spaces
 
 The thing worth knowing. A point read off a screenshot is not a point you can
