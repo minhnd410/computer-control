@@ -95,7 +95,7 @@ Then the Linux build is right, and it works normally inside the distro:
 
 ```bash
 sudo apt install libx11-6 libxtst6 libxrandr2 libxfixes3
-cc displays        # reports the WSLg session
+computer-control-mcp --doctor   # reports the WSLg session
 ```
 
 Gestures fall back to emulation there: WSL2 has no `/dev/uinput` unless you

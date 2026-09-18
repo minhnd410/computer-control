@@ -42,20 +42,20 @@ class ComputerControl < Formula
           Accessibility               - input and the element tree
           Screen & System Audio Recording - screenshots
 
-        Run `cc permissions` for the exact state and instructions.
+        Run `computer-control-mcp --doctor` for the exact state and instructions.
 
-        Note: a CLI launched from a terminal inherits that terminal's grant and
-        never appears in System Settings on its own. If element queries come
-        back empty, `cc permissions` will explain why and what to add.
+        Note: a binary launched from a terminal inherits that terminal's grant
+        and never appears in System Settings on its own. If element queries come
+        back empty, `--doctor` will explain why and what to add.
       TEXT
     end
   end
 
   test do
     assert_match "computer-control", shell_output("#{bin}/computer-control-mcp --version")
-    assert_match version.to_s, shell_output("#{bin}/cc --version") if build.stable?
-    # `displays` needs a window server, which the sandbox lacks, so only the
-    # argument-free paths are exercised here.
-    system bin/"cc", "--help"
+    assert_match version.to_s, shell_output("#{bin}/computer-control-mcp --version") if build.stable?
+    # A capability report needs a window server, which the sandbox lacks, so
+    # only the argument-free paths are exercised here.
+    system bin/"computer-control-mcp", "--list-tools"
   end
 end

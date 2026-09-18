@@ -150,7 +150,8 @@ public:
             SCShareableContent* content = shareable_content(&error);
             if (!content) {
                 return err(ErrorCode::PermissionDenied, "could not enumerate shareable content",
-                           "Screen Recording permission is required. See `cc doctor`.");
+                           "Screen Recording permission is required. See "
+                           "`computer-control-mcp --doctor`.");
             }
 
             if (opts.window_id.has_value()) return capture_window(content, opts);

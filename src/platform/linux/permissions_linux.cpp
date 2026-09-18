@@ -107,7 +107,8 @@ PermissionStatus check_permission(Permission p) {
             out.state = PermissionState::Granted;
             out.detail =
                 "no OS permission is required; the accessibility tree needs AT-SPI2 to be "
-                "installed and running, which `cc capabilities` reports separately";
+                "installed and running, which `computer-control-mcp --doctor` reports "
+                "separately";
             return out;
 
         case Permission::ScreenRecording:

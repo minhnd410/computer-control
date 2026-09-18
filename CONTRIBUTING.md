@@ -47,8 +47,7 @@ over scrcpy, an iPad simulator — please
 [open an issue](https://github.com/minhnd410/computer-control/issues) with:
 
 ```bash
-computer-control-mcp --doctor   # capabilities, backends, permissions
-cc capabilities                 # per-gesture fidelity (CLI, contributors only)
+computer-control-mcp --doctor   # capabilities, backends, permissions, gesture fidelity
 ```
 
 and a line on what worked and what did not. That is a real contribution even

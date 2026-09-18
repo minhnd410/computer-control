@@ -23,9 +23,9 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Produces `build/computer-control-mcp`, the `build/cc` debugging CLI, the static
-library `libcomputer_control.a` (`computer_control_static.lib` on Windows) and
-the public headers.
+Produces `build/computer-control-mcp`, the static library
+`libcomputer_control.a` (`computer_control_static.lib` on Windows) and the
+public headers.
 
 System packages:
 
@@ -40,7 +40,7 @@ xcode-select --install
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 && cmake --build build --config Release
 ```
 
-Build options: `-DCC_BUILD_MCP=OFF`, `-DCC_BUILD_CLI=OFF`, `-DCC_ENABLE_NATIVE=ON`
+Build options: `-DCC_BUILD_MCP=OFF` (library only), `-DCC_ENABLE_NATIVE=ON`
 (tune for this CPU; not for redistributable builds), `-DCC_USE_SYSTEM_ZLIB=OFF`.
 
 ## Coming soon
@@ -60,19 +60,19 @@ manifest, and a package index entry.
 
 ## What ships
 
-One binary: `computer-control-mcp`. There is no C ABI and no Python package,
-and the `cc` CLI is not in the release archives — it mirrors the same 32-action
-registry as the MCP tool list and adds no capability, so shipping it would mean
-two binaries to install and explain for one job.
+One binary, `computer-control-mcp`, plus a static library for embedding. There
+is no CLI, no C ABI and no Python package.
 
-`cc` is still in the repository as the contributor debugging tool, and a source
-build produces it. Every action accepts `--raw` and returns byte-for-byte what
-the matching MCP tool returns, which makes it a convenient scripting binding if
-you are building from source anyway:
+To drive this from another language, speak MCP to the server — it is a
+line-delimited JSON-RPC conversation on stdin and stdout, which any language
+can hold without a client library:
 
 ```bash
-cmake --build build --target cc_cli
-./build/cc windows --raw | jq '.result.windows[] | select(.focused)'
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+  "name":"windows","arguments":{},
+  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",
+           "io.modelcontextprotocol/clientCapabilities":{}}}}' \
+  | computer-control-mcp | jq '.result.structuredContent.windows[] | select(.focused)'
 ```
 
 The [JSON schema](json-schema.md) documents those payloads, and is

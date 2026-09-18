@@ -147,7 +147,8 @@ PermissionStatus check_permission(Permission p) {
                 out.detail = "InjectTouchInput is unavailable on this Windows version";
                 out.remedy =
                     "Touch injection needs Windows 8 or later and an interactive session. "
-                    "Gestures fall back to scroll and click emulation; `cc capabilities` "
+                    "Gestures fall back to scroll and click emulation; "
+                    "`computer-control-mcp --doctor` "
                     "reports which.";
             }
             return out;

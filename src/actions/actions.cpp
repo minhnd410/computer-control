@@ -968,7 +968,7 @@ ActionResult act_capabilities(Session& s, const Value&) {
     json::ParseError pe;
     Value v = json::parse(s.capability_report(), &pe);
 
-    // The JSON is for programs; a human running `cc capabilities` wants to
+    // The JSON is for programs; a human running `--doctor` wants to
     // read it. Previously this returned the single word "Capability report.",
     // which told the caller nothing at all.
     std::string text;

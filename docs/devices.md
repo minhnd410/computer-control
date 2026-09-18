@@ -6,13 +6,15 @@ Two transports, chosen automatically:
 - **Bridge** — the device's own tooling (`xcrun simctl`, `idb`, `adb`). Exact coordinates, works when the window is hidden or the device is headless.
 - **Onscreen** — locate the device's viewport inside its host window and translate device points into host points. Works for anything visible, including iPhone Mirroring and scrcpy, and is the only option when the CLI tooling is missing.
 
-```bash
-cc device --mode list
-cc device --mode tap    --device "iPhone 15" --at 196,420
-cc device --mode swipe  --device "Pixel 8" --from 540,1600 --to 540,600
-cc device --mode gesture --device "iPhone 15" --kind pinch --scale 2.0
-cc device --mode screenshot --device "iPhone 15" --out phone.png
-cc device --mode tree   --device "Pixel 8"       # uiautomator element tree
+All of it goes through the one `device` tool, selected by `mode`:
+
+```json
+{"mode": "list"}
+{"mode": "tap",     "device": "iPhone 15", "at": {"x": 196, "y": 420}}
+{"mode": "swipe",   "device": "Pixel 8", "from": {"x": 540, "y": 1600}, "to": {"x": 540, "y": 600}}
+{"mode": "gesture", "device": "iPhone 15", "kind": "pinch", "scale": 2.0}
+{"mode": "screenshot", "device": "iPhone 15"}
+{"mode": "tree",    "device": "Pixel 8"}
 ```
 
 Coordinates are always in the **device's own points**. An iPhone 15 Pro is 393×852 regardless of how the simulator window is sized on your screen.

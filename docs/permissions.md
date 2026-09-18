@@ -25,7 +25,7 @@ This is the part that wastes an afternoon, so it is worth stating plainly.
 
 macOS attributes a permission to the **responsible process**, not to the binary that asks. A command-line tool started from a terminal is attributed to *the terminal*. Three things follow:
 
-1. `cc` never appears in the Accessibility list, so there is nothing to enable.
+1. The binary never appears in the Accessibility list, so there is nothing to enable.
 2. The permission prompt never fires — `AXIsProcessTrusted()` already returns true because the terminal is granted, and macOS only prompts a process it considers untrusted.
 3. That inherited grant covers the *trust check* but not always real inspection. You get `AXIsProcessTrusted() == true` while every window comes back as an empty placeholder.
 
@@ -34,7 +34,7 @@ macOS attributes a permission to the **responsible process**, not to the binary 
 ```
 Permissions for this process are attributed to iTerm2, not to the binary
 itself, which is why
-  /usr/local/bin/cc
+  /usr/local/bin/computer-control-mcp
 does not appear in System Settings.
 ```
 

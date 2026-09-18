@@ -1,6 +1,7 @@
-# Builds computer-control.app, a minimal LSUIElement bundle wrapping the CLI.
+# Builds computer-control.app, a minimal LSUIElement bundle wrapping the MCP
+# server.
 #
-# Why a bundle at all, for a command-line tool: macOS attributes a TCC grant to
+# Why a bundle at all, for a command-line binary: macOS attributes a TCC grant to
 # the *responsible process*. A binary started from a terminal is attributed to
 # the terminal, so it never appears in System Settings > Accessibility, the
 # permission prompt never fires (the OS considers the request already answered
@@ -19,21 +20,19 @@ if(NOT APPLE)
 endif()
 
 set(CC_BUNDLE_DIR "${CMAKE_BINARY_DIR}/computer-control.app")
-set(CC_BUNDLE_ID "dev.computercontrol.cli" CACHE STRING "Bundle identifier for the macOS app")
+set(CC_BUNDLE_ID "dev.computercontrol.mcp" CACHE STRING "Bundle identifier for the macOS app")
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
                "${CMAKE_BINARY_DIR}/generated/Info.plist" @ONLY)
 
 add_custom_target(macos_bundle
-  DEPENDS cc_cli cc_mcp
+  DEPENDS cc_mcp
   COMMENT "Building computer-control.app"
 
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CC_BUNDLE_DIR}/Contents/MacOS"
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CC_BUNDLE_DIR}/Contents/Resources"
   COMMAND ${CMAKE_COMMAND} -E copy
           "${CMAKE_BINARY_DIR}/generated/Info.plist" "${CC_BUNDLE_DIR}/Contents/Info.plist"
-  COMMAND ${CMAKE_COMMAND} -E copy
-          "$<TARGET_FILE:cc_cli>" "${CC_BUNDLE_DIR}/Contents/MacOS/cc"
   COMMAND ${CMAKE_COMMAND} -E copy
           "$<TARGET_FILE:cc_mcp>" "${CC_BUNDLE_DIR}/Contents/MacOS/computer-control-mcp"
 

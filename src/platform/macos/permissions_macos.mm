@@ -233,9 +233,10 @@ PermissionStatus check_permission(Permission p) {
                 out.detail += " (permissions here are attributed to " + owner + ")";
             }
             out.can_prompt = has_own_tcc_identity();
-            out.remedy = "Run `cc permissions --request`, or add it by hand under " +
-                         settings_hint("Accessibility") + ":\n    " + executable_path() +
-                         "\nThe grant is read at launch, so restart the process afterwards.";
+            out.remedy =
+                "Run `computer-control-mcp --request-permissions`, or add it by hand under " +
+                settings_hint("Accessibility") + ":\n    " + executable_path() +
+                "\nThe grant is read at launch, so restart the process afterwards.";
             return out;
         }
 
@@ -249,7 +250,7 @@ PermissionStatus check_permission(Permission p) {
             out.state = PermissionState::Denied;
             out.detail = "screen capture is not permitted";
             out.can_prompt = true;
-            out.remedy = "Run `cc permissions --request`, or enable it under " +
+            out.remedy = "Run `computer-control-mcp --request-permissions`, or enable it under " +
                          settings_hint("Screen & System Audio Recording") + ":\n    " +
                          executable_path() + "\nRestart the process afterwards.";
             return out;
@@ -268,7 +269,8 @@ PermissionStatus check_permission(Permission p) {
             out.state = PermissionState::NotRequired;
             out.detail =
                 "macOS exposes no public multi-touch synthesis API, so there is no permission "
-                "to grant. Pinch and multi-finger swipes are emulated; see `cc capabilities`.";
+                "to grant. Pinch and multi-finger swipes are emulated; see "
+                "`computer-control-mcp --doctor`.";
             out.affects = {"gesture (pinch, rotate, 3+ finger swipe)"};
             return out;
     }

@@ -66,7 +66,7 @@ public:
 
     // Human-readable capability report: which backends came up, which
     // permissions are missing, what gesture fidelity is available. This is
-    // what the `Capabilities` tool and `cc doctor` print.
+    // what the `capabilities` tool and `--doctor` print.
     std::string capability_report();
 
     Status release_all();

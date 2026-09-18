@@ -3,11 +3,11 @@
 
 // The single action dispatcher.
 //
-// Two front-ends need the same behaviour: the MCP server and the CLI. Rather
-// than implement argument parsing, coordinate resolution and error shaping
-// twice (and drift), each action is defined once here as JSON in / JSON out.
-// The MCP tool layer is then a thin schema wrapper, and `cc click --at
-// 100,200` is a thin argv-to-JSON wrapper.
+// Every action is defined once here as JSON in / JSON out, with its own
+// schema, so the MCP tool layer is a thin wrapper over this table rather than
+// a second implementation of argument parsing, coordinate resolution and error
+// shaping. The tool list and its schemas are generated from the registry
+// below, which is why adding a capability is one entry plus its handler.
 
 #include <string>
 #include <vector>

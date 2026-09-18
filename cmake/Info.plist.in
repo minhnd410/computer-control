@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleExecutable</key>            <string>cc</string>
+  <key>CFBundleExecutable</key>            <string>computer-control-mcp</string>
   <key>CFBundleIdentifier</key>            <string>@CC_BUNDLE_ID@</string>
   <key>CFBundleName</key>                  <string>computer-control</string>
   <key>CFBundleDisplayName</key>           <string>computer-control</string>

@@ -18,7 +18,6 @@ endif()
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
-option(CC_BUILD_CLI      "Build the cc command-line tool"              ON)
 option(CC_BUILD_MCP      "Build the MCP server"                        ON)
 option(CC_BUILD_TESTS    "Build tests"                                 ON)
 option(CC_ENABLE_LTO     "Link-time optimization in Release"           ON)
@@ -253,12 +252,6 @@ endif()
 # ---------------------------------------------------------------------------
 # Executables
 # ---------------------------------------------------------------------------
-if(CC_BUILD_CLI)
-  add_executable(cc_cli src/cli/main.cpp)
-  target_link_libraries(cc_cli PRIVATE cc_static)
-  set_target_properties(cc_cli PROPERTIES OUTPUT_NAME cc)
-endif()
-
 if(CC_BUILD_MCP)
   add_executable(cc_mcp
     src/mcp/main.cpp
@@ -302,7 +295,7 @@ endif()
 # ---------------------------------------------------------------------------
 # macOS app bundle
 # ---------------------------------------------------------------------------
-if(APPLE AND CC_BUILD_APP_BUNDLE AND CC_BUILD_CLI AND CC_BUILD_MCP)
+if(APPLE AND CC_BUILD_APP_BUNDLE AND CC_BUILD_MCP)
   include(cmake/MacAppBundle.cmake)
 endif()
 
@@ -312,9 +305,6 @@ endif()
 include(GNUInstallDirs)
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(TARGETS cc_static ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-if(CC_BUILD_CLI)
-  install(TARGETS cc_cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif()
 if(CC_BUILD_MCP)
   install(TARGETS cc_mcp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()

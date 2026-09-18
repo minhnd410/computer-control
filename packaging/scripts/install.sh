@@ -81,11 +81,10 @@ install_files() {
         $sudo_cmd mkdir -p "$bindir"
     fi
 
-    for binary in cc computer-control-mcp; do
-        [ -f "$src/$binary" ] || die "expected $src/$binary after build"
-        $sudo_cmd install -m 0755 "$src/$binary" "$bindir/$binary"
-    done
-    say "Installed cc and computer-control-mcp to $bindir"
+    binary=computer-control-mcp
+    [ -f "$src/$binary" ] || die "expected $src/$binary after build"
+    $sudo_cmd install -m 0755 "$src/$binary" "$bindir/$binary"
+    say "Installed $binary to $bindir"
 }
 
 fetch_release() {
@@ -101,10 +100,10 @@ fetch_release() {
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
     # A missing release must not look like a network failure.
-    if ! curl -fsSL "$url" -o "$tmp/cc.tar.gz" 2>/dev/null; then
+    if ! curl -fsSL "$url" -o "$tmp/archive.tar.gz" 2>/dev/null; then
         return 1
     fi
-    tar -xzf "$tmp/cc.tar.gz" -C "$tmp" || die "archive is corrupt"
+    tar -xzf "$tmp/archive.tar.gz" -C "$tmp" || die "archive is corrupt"
     install_files "$tmp"
     return 0
 }
@@ -126,13 +125,13 @@ $PREFIX/bin is not on your PATH. Add it:
 
     say ""
     say "Next:"
-    say "    cc permissions      # what the OS is allowing, and how to fix it"
-    say "    cc doctor           # full capability report"
+    say "    computer-control-mcp --request-permissions   # grant what it needs"
+    say "    computer-control-mcp --doctor                # full capability report"
     if [ "$(uname -s)" = "Darwin" ]; then
         say ""
         say "On macOS the Accessibility grant follows the *responsible process*, so a"
         say "binary run from a terminal is attributed to the terminal and never appears"
-        say "in System Settings. \`cc permissions\` explains what to do about it."
+        say "in System Settings. \`--doctor\` explains what to do about it."
     fi
 }
 

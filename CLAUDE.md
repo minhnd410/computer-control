@@ -8,14 +8,13 @@ An MCP server for desktop and mobile-simulator automation on macOS, Windows and
 Linux, on a C++20 core. **MCP is the primary contract**, spoken at revision
 2026-07-28 with a 2025-06-18 fallback.
 
-**`computer-control-mcp` is the only binary that ships.** The `cc` CLI is the
-same dispatcher behind an argv parser, kept in the repository because it is the
-fastest way to exercise a tool with no client attached — but it mirrors the
-same action registry and adds no capability, so it is not in the release
-archives. Anything an operator needs must be reachable from the server binary:
-that is why `--doctor` and `--request-permissions` exist. Do not add an
-operator-facing capability to `cc` alone. The static library is there for
-embedding. Both front-ends funnel through one dispatcher so they cannot drift.
+**`computer-control-mcp` is the only binary.** There was a `cc` CLI mirroring
+the same action registry; it was removed because it added no capability and
+doubled what had to be installed, signed, documented and kept in step. Anything
+an operator needs must therefore be reachable from the server binary itself —
+that is why `--doctor` and `--request-permissions` exist. Do not reintroduce a
+second front-end without a concrete consumer. The static library is there for
+embedding.
 
 There is deliberately no C ABI and no Python binding. They existed, and were
 removed as surface maintained for a use case this project does not have. If
@@ -34,9 +33,8 @@ ctest --test-dir build --output-on-failure      # or ./build/cc_tests
 Run a single check while iterating:
 
 ```bash
-./build/computer-control-mcp --doctor   # capability + permission report
-./build/cc displays              # verify DPI detection
-./build/cc screenshot --out /tmp/s.png --max_dimension 900   # CLI, contributors only
+./build/computer-control-mcp --doctor            # capabilities, backends, permissions
+./build/computer-control-mcp --list-tools        # the action registry
 ```
 
 The test suite is hermetic except for `test_display.cpp`, which reads the real display topology, and a few `exec` tests that spawn `/bin/echo`. Neither needs a granted permission.
@@ -50,8 +48,8 @@ src/platform/<os>/   One backend per subsystem per OS. Same six files each:
                      display, input, screen, window, a11y, system.
 src/devices/         iOS/Android/mirrored device transports.
 src/actions/         The single action dispatcher: JSON in, JSON out.
-src/mcp/             MCP server. A schema wrapper over the dispatcher.
-src/cli/             `cc`. An argv-to-JSON wrapper over the dispatcher.
+src/mcp/             MCP server. A schema wrapper over the dispatcher, and
+                     the only executable this project produces.
 ```
 
 Adding a capability means editing **one** place: add an `ActionSpec` to the registry in `src/actions/actions.cpp` and implement it. The MCP tool list and CLI help are generated from that registry.

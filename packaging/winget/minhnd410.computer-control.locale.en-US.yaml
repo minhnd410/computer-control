@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 PackageIdentifier: minhnd410.computer-control
-PackageVersion: 0.1.0
+PackageVersion: 0.0.0   # placeholder: no release is tagged
 PackageLocale: en-US
 Publisher: minhnd410
 PublisherUrl: https://github.com/minhnd410
@@ -11,8 +11,8 @@ License: MIT
 LicenseUrl: https://github.com/minhnd410/computer-control/blob/main/LICENSE
 ShortDescription: Cross-platform desktop and mobile-simulator automation with an MCP server
 Description: |-
-  A C++20 core for driving a desktop and the phones on it, exposed as a native
-  library, a stable C ABI, a `cc` CLI and an MCP server.
+  A C++20 core for driving a desktop and the phones on it, shipped as an MCP
+  server with a static library for embedding.
 
   On Windows it uses SendInput for keyboard and mouse, InjectTouchInput for real
   multi-touch contacts, UI Automation for the element tree, and GDI for capture.

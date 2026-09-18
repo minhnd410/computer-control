@@ -22,13 +22,36 @@ computer-control-mcp --list-tools
 
 ---
 
+## Install
+
+Build from source — there is no published release yet. Details:
+**[docs/install.md](docs/install.md)**.
+
+```bash
+git clone https://github.com/minhnd410/computer-control.git
+cd computer-control
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+./build/computer-control-mcp --request-permissions
+```
+
+Then point your client at `build/computer-control-mcp`, or copy it onto your
+`PATH`.
+
+> **Not available yet:** prebuilt binaries, Homebrew, winget, `uvx`, and
+> `curl | sh`. The release pipeline and the packaging scaffolding are in
+> [`.github/workflows/release.yml`](.github/workflows/release.yml) and
+> [`packaging/`](packaging); nothing is tagged or published.
+
+**Claude Code in WSL:** install the **Windows** build and have WSL launch it. A Linux binary inside WSL cannot control Windows — WSLg is one-directional. See [docs/wsl.md](docs/wsl.md).
+
+---
+
 ## Contents
 
-- [Why this exists](#why-this-exists)
+- [Install](#install)
 - [What it can do](#what-it-can-do)
   - [Gesture fidelity by platform](#gesture-fidelity-by-platform)
   - [What has actually been tested](#what-has-actually-been-tested)
-- [Install](#install)
 - [Use as an MCP server](docs/mcp.md)
 - [Permissions](docs/permissions.md)
 - [Driving phones and simulators](docs/devices.md)
@@ -37,31 +60,6 @@ computer-control-mcp --list-tools
 - [Safety](#safety)
 - [Contributing](#contributing) · [Project layout](#project-layout)
 - [Full documentation index](#documentation)
-
----
-
-## Why this exists
-
-Desktop automation tools tend to pick one platform, one language, and one level of abstraction. This one makes three specific bets.
-
-### Coordinate spaces are part of the type system
-
-The single most common bug in this space is reading a pixel off a Retina screenshot and clicking it as if it were a point. Every coordinate here carries a space — `logical`, `physical`, or `image` — and conversion resolves against the display that contains it, so mixed-DPI multi-monitor setups convert per display rather than with one global factor.
-
-On a 1440x900 @2x display captured down to 1000 px wide, a button at (500, 300)
-in that image is at (720, 432) logical. Clicking the raw pixel misses by 220
-points. Pass it back as `{"x":500,"y":300,"space":"image"}` and it is converted
-for you.
-
-### Fidelity is reported, not faked
-
-Windows and Linux can synthesize genuine multi-touch. macOS cannot — there is no public API for it. Instead of silently substituting something that looks similar, `capabilities` tells you whether each gesture is `native`, `emulated`, or `unsupported`, names the backend, and explains the substitution. `require_native` refuses emulation outright.
-
-### Errors carry a remedy
-
-Every failure names the exact next step — the settings pane, the package, the udev rule. The macOS permission model in particular is genuinely confusing: a grant belongs to the *responsible process*, so a CLI started from a terminal is attributed to the terminal, never appears in System Settings, and cannot prompt for itself. The tool says so rather than returning an empty result.
-
-The server speaks the current revision, **2026-07-28**, and falls back to **2025-06-18** for clients that have not caught up — which today is most of them. A modern request is served statelessly with no handshake; an `initialize` still works. See [protocol revisions](docs/mcp.md#protocol-revisions).
 
 ---
 
@@ -121,30 +119,6 @@ Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), 
 
 ---
 
-## Install
-
-Build from source — there is no published release yet. Details:
-**[docs/install.md](docs/install.md)**.
-
-```bash
-git clone https://github.com/minhnd410/computer-control.git
-cd computer-control
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
-./build/computer-control-mcp --request-permissions
-```
-
-Then point your client at `build/computer-control-mcp`, or copy it onto your
-`PATH`.
-
-> **Not available yet:** prebuilt binaries, Homebrew, winget, `uvx`, and
-> `curl | sh`. The release pipeline and the packaging scaffolding are in
-> [`.github/workflows/release.yml`](.github/workflows/release.yml) and
-> [`packaging/`](packaging); nothing is tagged or published.
-
-**Claude Code in WSL:** install the **Windows** build and have WSL launch it. A Linux binary inside WSL cannot control Windows — WSLg is one-directional. See [docs/wsl.md](docs/wsl.md).
-
----
-
 ## Using the library directly
 
 ```cpp
@@ -164,7 +138,7 @@ input->gesture(pinch);
 
 `Session` owns the backends and guarantees that everything held — mouse buttons, modifier keys, touch contacts — is released when it is destroyed, including on an exception path.
 
-There is no C ABI and no Python binding. To drive this from another language, speak MCP to the server, or build the `cc` CLI from source (`cmake --build build --target cc_cli`) and parse `--raw` JSON — it is byte-for-byte what the matching MCP tool returns. `cc` is a debugging and scripting tool for contributors; it is not shipped in the release archives, because it mirrors the same action registry and adds no capability.
+There is no CLI, no C ABI and no Python binding. To drive this from another language, speak MCP to the server: it is a line-delimited JSON-RPC conversation on stdin and stdout, which any language can hold without a client library. See [docs/install.md](docs/install.md#what-ships).
 
 ---
 
@@ -192,12 +166,11 @@ src/platform/      macos/ (CGEvent, ScreenCaptureKit, AX)
                    linux/ (XTest, uinput, EWMH, AT-SPI2)
 src/devices/       Simulator, emulator and mirrored-device transports
 src/actions/       The shared action dispatcher: JSON in, JSON out
-src/mcp/           MCP server — the binary that ships
-src/cli/           `cc`, the same dispatcher behind argv; contributors only
+src/mcp/           MCP server — the only binary this project produces
 packaging/         Homebrew formula, winget manifests, install script (none published)
 ```
 
-Both front-ends funnel through one action dispatcher (`src/actions/actions.cpp`), so the CLI and the MCP server cannot drift apart. Adding a capability is one `ActionSpec` there.
+Every tool funnels through one action dispatcher (`src/actions/actions.cpp`). Adding a capability is one `ActionSpec` there, and the MCP tool list is generated from it.
 
 ---
 

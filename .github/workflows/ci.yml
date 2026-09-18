@@ -56,22 +56,24 @@ jobs:
         if: runner.os != 'Linux'
         run: ctest --test-dir build --output-on-failure -C Release
 
-      - name: Smoke test the CLI
+      - name: Smoke test the server
         shell: bash
         run: |
-          BIN=build/cc
-          [ -f build/Release/cc.exe ] && BIN=build/Release/cc.exe
+          BIN=build/computer-control-mcp
+          [ -f build/Release/computer-control-mcp.exe ] && BIN=build/Release/computer-control-mcp.exe
           "$BIN" --version
           "$BIN" --help > /dev/null
-          # `displays` needs a real display; on Linux it runs under Xvfb above.
-          if [ "${{ runner.os }}" != "Linux" ]; then "$BIN" displays; fi
+          "$BIN" --list-tools > /dev/null
+          # A server that cannot answer tools/list is broken in a way --version
+          # would not catch.
+          echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
+            | "$BIN" | grep -q '"tools"'
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: computer-control-${{ matrix.os }}-${{ strategy.job-index }}
           path: |
-            build/cc
             build/computer-control-mcp
             build/libcomputer_control.a
             build/Release/*.exe
