@@ -80,8 +80,19 @@ print(json.dumps({"data": {"type": "certificates", "attributes": {
     "certificateType": "DEVELOPER_ID_APPLICATION", "csrContent": sys.argv[1]}}}))
 ' "$CSR_CONTENT")
 
-RESPONSE=$(curl -sS -X POST https://api.appstoreconnect.apple.com/v1/certificates \
+# Capture the status separately: a 401 with an empty body and a 409 with a
+# useful message look identical when you only keep stdout.
+HTTP=$(curl -sS -o /tmp/cc-asc-response.json -w '%{http_code}' \
+  -X POST https://api.appstoreconnect.apple.com/v1/certificates \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BODY")
+RESPONSE=$(cat /tmp/cc-asc-response.json)
+printf '   HTTP %s\n' "$HTTP"
+
+if [ "$HTTP" != "201" ] && [ "$HTTP" != "200" ]; then
+  printf '   response:\n' >&2
+  printf '%s\n' "$RESPONSE" | head -c 2000 >&2
+  printf '\n' >&2
+fi
 
 if printf '%s' "$RESPONSE" | grep -q '"errors"'; then
   # Print whatever came back even if it does not parse. An error reporter that
