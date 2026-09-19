@@ -7,6 +7,7 @@
 #include "cc/system_ui.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -760,6 +761,22 @@ const std::vector<ActionSpec>& registry() {
             "interactive_only":{"description":"Only elements that can be interacted with.","type":"boolean","default":true},
             "max_nodes":{"description":"Stop after this many elements and report the tree as truncated.","type":"integer"},
             "budget_ms":{"description":"Wall-clock budget for the walk.","type":"integer"}}})",
+         true, false},
+
+        {"find", "Find",
+         "Locate something on screen by its text, scrolling to reach it if necessary. Returns "
+         "coordinates you can click. Far cheaper than screenshotting a long page and reading it: "
+         "it stops the moment it finds a match, and it knows when it has hit the bottom instead "
+         "of scrolling forever.",
+         R"({"type":"object","required":["text"],"properties":{
+            "text":{"type":"string","description":"The text to look for. An exact match wins over a substring one."},
+            "pid":{"type":"integer","description":"Restrict the search, and scroll this application's content. Much faster, and required for end-of-content detection."},
+            "interactive_only":{"type":"boolean","default":false,
+                                "description":"Only match things that can be clicked or typed into."},
+            "max_scrolls":{"type":"integer","default":12,"minimum":0,
+                           "description":"Give up after this many scrolls."},
+            "settle_ms":{"type":"integer","default":120,
+                         "description":"Pause after each scroll so the content can render."}}})",
          true, false},
 
         {"menu", "Menu",
@@ -1723,6 +1740,186 @@ Result<int> menu_target_pid(Session& s, const Value& args) {
     return focused.value().pid;
 }
 
+// Case-insensitive substring, ASCII-folded. Good enough for locating a label
+// on screen, and it avoids dragging in a collation library for the sake of it.
+bool contains_fold(const std::string& haystack, const std::string& needle) {
+    if (needle.empty()) return true;
+    if (needle.size() > haystack.size()) return false;
+    auto lower = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
+    for (std::size_t i = 0; i + needle.size() <= haystack.size(); ++i) {
+        std::size_t j = 0;
+        while (j < needle.size() && lower(haystack[i + j]) == lower(needle[j])) ++j;
+        if (j == needle.size()) return true;
+    }
+    return false;
+}
+
+// Searches a snapshot for the first node whose text matches. Exact matches win
+// over substring ones, because "Save" should find the Save button rather than
+// "Save As..." merely by appearing earlier in the tree.
+// A match carries the text that matched, not just the node: an element often
+// matches on its value or description while its name is empty, and reporting
+// `Found text ""` tells the caller nothing about what was located.
+struct Match {
+    const Node* node = nullptr;
+    std::string matched;
+};
+
+void match_in_node(const Node& n, const std::string& query, bool interactive_only, Match* exact,
+                   Match* fuzzy) {
+    if (exact->node) return;
+    const bool eligible = (!interactive_only || n.interactive) && !n.bounds.empty();
+    if (eligible) {
+        for (const std::string* field : {&n.name, &n.value, &n.description}) {
+            if (field->empty()) continue;
+            if (*field == query) {
+                *exact = Match{&n, *field};
+                return;
+            }
+            if (!fuzzy->node && contains_fold(*field, query)) *fuzzy = Match{&n, *field};
+        }
+    }
+    for (const auto& child : n.children) {
+        match_in_node(child, query, interactive_only, exact, fuzzy);
+        if (exact->node) return;
+    }
+}
+
+Match match_in_tree(const Tree& tree, const std::string& query, bool interactive_only) {
+    Match exact, fuzzy;
+    for (const auto& root : tree.roots) {
+        match_in_node(root, query, interactive_only, &exact, &fuzzy);
+        if (exact.node) break;
+    }
+    return exact.node ? exact : fuzzy;
+}
+
+ActionResult act_find(Session& s, const Value& args) {
+    const std::string query = args["text"].as_string();
+    if (query.empty()) {
+        return fail(err(ErrorCode::InvalidArgument, "find needs text to look for"));
+    }
+    auto a11y = s.accessibility();
+    if (!a11y) return fail(a11y.error());
+    auto input = s.input();
+    if (!input) return fail(input.error());
+
+    const int max_scrolls = static_cast<int>(args["max_scrolls"].as_int(12));
+    const bool interactive_only = args["interactive_only"].as_bool(false);
+    const int settle_ms = static_cast<int>(args["settle_ms"].as_int(120));
+
+    int pid = 0;
+    if (args.contains("pid") && args["pid"].is_number()) {
+        pid = static_cast<int>(args["pid"].as_int());
+    }
+
+    TreeOptions opts;
+    opts.interactive_only = false;
+    opts.include_offscreen = false;
+    opts.max_nodes = 4000;
+    opts.budget = std::chrono::milliseconds(1500);
+    if (pid) opts.pid = pid;
+
+    double last_position = -2;
+    for (int scrolls = 0; scrolls <= max_scrolls; ++scrolls) {
+        auto tree = a11y.value()->snapshot(opts);
+        if (!tree) return fail(tree.error());
+
+        const Match m = match_in_tree(tree.value(), query, interactive_only);
+        if (m.node) {
+            const Node* hit = m.node;
+            const Rect& b = hit->bounds;
+            Value v = Value::object();
+            v.set("found", true);
+            v.set("matched", m.matched);
+            v.set("name", hit->name);
+            v.set("role", to_string(hit->role));
+            v.set("scrolls", static_cast<long long>(scrolls));
+            Value centre = Value::object();
+            centre.set("x", b.x + b.w / 2);
+            centre.set("y", b.y + b.h / 2);
+            centre.set("space", "logical");
+            v.set("at", centre);
+            v.set("bounds", rect_json(b));
+            if (hit->label > 0) v.set("label", static_cast<long long>(hit->label));
+
+            const std::string shown = text::truncate_utf8(m.matched, 60);
+            const std::string after =
+                scrolls ? " after " + std::to_string(scrolls) + " scroll(s)" : std::string();
+            char msg[420];
+            std::snprintf(msg, sizeof(msg),
+                          "Found %s \"%s\" at (%.0f, %.0f)%s. Click it with "
+                          "{\"at\":{\"x\":%.0f,\"y\":%.0f}}.",
+                          to_string(hit->role), shown.c_str(), b.x + b.w / 2, b.y + b.h / 2,
+                          after.c_str(), b.x + b.w / 2, b.y + b.h / 2);
+            return succeed(msg, v);
+        }
+
+        if (scrolls == max_scrolls) break;
+
+        // Not on screen. Scroll the largest scrollable region and look again.
+        // Stopping when the scroll position stops moving is what keeps this
+        // from spinning on a page that has already reached its end.
+        double position = -1;
+        if (pid) {
+            if (auto regions = a11y.value()->scroll_regions(pid);
+                regions && !regions.value().empty()) {
+                const ScrollRegion* biggest = nullptr;
+                for (const auto& r : regions.value()) {
+                    if (!biggest ||
+                        r.bounds.w * r.bounds.h > biggest->bounds.w * biggest->bounds.h) {
+                        biggest = &r;
+                    }
+                }
+                if (biggest) {
+                    position = biggest->vertical;
+                    if (biggest->at_end) {
+                        Value v = Value::object();
+                        v.set("found", false);
+                        v.set("scrolls", static_cast<long long>(scrolls));
+                        v.set("reason", "reached the end of the scrollable content");
+                        return succeed("Not found. Reached the bottom after " +
+                                           std::to_string(scrolls) + " scroll(s).",
+                                       v);
+                    }
+                }
+            }
+        }
+        if (position >= 0 && position == last_position) {
+            Value v = Value::object();
+            v.set("found", false);
+            v.set("scrolls", static_cast<long long>(scrolls));
+            v.set("reason", "scrolling stopped making progress");
+            return succeed("Not found. Scrolling stopped making progress after " +
+                               std::to_string(scrolls) + " scroll(s).",
+                           v);
+        }
+        last_position = position;
+
+        ScrollOptions so;
+        so.direction = ScrollDirection::Down;
+        so.clicks = 8;
+        auto where = input.value()->cursor_position();
+        if (auto st =
+                input.value()->scroll(where ? where.value() : Point{0, 0, Space::Logical}, so);
+            !st) {
+            return fail(st.error());
+        }
+        if (settle_ms > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(settle_ms));
+        }
+    }
+
+    Value v = Value::object();
+    v.set("found", false);
+    v.set("scrolls", static_cast<long long>(max_scrolls));
+    v.set("reason", "exhausted max_scrolls");
+    return succeed("Not found within " + std::to_string(max_scrolls) +
+                       " scrolls. Raise max_scrolls, or pass pid to scroll a specific "
+                       "application's content.",
+                   v);
+}
+
 ActionResult act_menu(Session& s, const Value& args) {
     auto a11y = s.accessibility();
     if (!a11y) return fail(a11y.error());
@@ -2080,6 +2277,7 @@ ActionResult run(Session& session, std::string_view name, const Value& args) {
         if (name == "app") return act_app(session, args);
         if (name == "elements") return act_elements(session, args);
         if (name == "menu") return act_menu(session, args);
+        if (name == "find") return act_find(session, args);
         if (name == "clipboard") return act_clipboard(session, args);
         if (name == "shell") return act_shell(session, args);
         if (name == "process") return act_process(session, args);

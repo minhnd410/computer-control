@@ -345,6 +345,10 @@ public:
                    "keyboard shortcut: use `key`.");
     }
 
+    Result<std::vector<ScrollRegion>> scroll_regions(int) override {
+        return err(ErrorCode::Unsupported, "scroll-position reading is macOS-only so far");
+    }
+
     Status set_value(const Node& node, std::string_view value) override {
         if (auto st = initialize(); !st) return st.error();
         const Point phys = displays_->convert(node.bounds.center(), Space::Physical);

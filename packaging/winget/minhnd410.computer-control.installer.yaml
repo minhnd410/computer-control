@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 PackageIdentifier: minhnd410.computer-control
-PackageVersion: 0.3.0
+PackageVersion: 0.4.0
 InstallerType: zip
 NestedInstallerType: portable
 # One binary: what an MCP client launches.
@@ -18,7 +18,7 @@ MinimumOSVersion: 10.0.17763.0   # InjectTouchInput needs Win8+; UIA caching wan
 # rather than handing them a 404.
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/minhnd410/computer-control/releases/download/v0.3.0/computer-control-windows-x86_64.zip
+    InstallerUrl: https://github.com/minhnd410/computer-control/releases/download/v0.4.0/computer-control-windows-x86_64.zip
     InstallerSha256: 09C40CED73242D3B6B7D33FBFA9FA9545347A5AFCA7FF5667262526249E58D01
 ManifestType: installer
 ManifestVersion: 1.6.0

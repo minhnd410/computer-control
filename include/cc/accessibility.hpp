@@ -123,6 +123,14 @@ struct Tree {
     std::chrono::milliseconds elapsed{0};
 };
 
+// A scrollable region. `vertical` is 0 at the top and 1 at the bottom;
+// -1 means the application exposes no scroll bar to read.
+struct ScrollRegion {
+    Rect bounds;
+    double vertical = -1;
+    bool at_end = false;
+};
+
 // One entry in an application's menu bar. `path` is what invoke_menu takes.
 struct MenuEntry {
     std::vector<std::string> path;  // e.g. {"File", "Save As\u2026"}
@@ -159,6 +167,12 @@ public:
     // invoking a path is far more reliable than driving menus by pixel.
     virtual Result<std::vector<MenuEntry>> menu_bar(int pid, int depth) = 0;
     virtual Status invoke_menu(int pid, const std::vector<std::string>& path) = 0;
+
+    // Scrollable regions and how far through each one the view currently is.
+    // Without this, anything that scrolls has to guess when it has reached the
+    // bottom - usually by capturing the screen and comparing, which costs a
+    // screenshot per step and is fooled by a blinking cursor.
+    virtual Result<std::vector<ScrollRegion>> scroll_regions(int pid) = 0;
 
 protected:
     std::shared_ptr<DisplayGraph> displays_;

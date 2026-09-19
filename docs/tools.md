@@ -1,7 +1,7 @@
 <!-- Split out of the README; see the table of contents there. -->
 # Tool reference
 
-33 tools exist; 32 are advertised by default, because `registry` stays hidden
+34 tools exist; 33 are advertised by default, because `registry` stays hidden
 unless you pass `--allow-registry`. A disabled tool is not listed at all rather
 than listed and refusing, so the model's attention is not spent on it.
 
@@ -27,6 +27,33 @@ the registry by the test suite, so they cannot drift.
 | `elements` | Query the accessibility tree with no screenshot: the whole tree, the element under a point, or the focused one. |
 | `menu` | Read or invoke an application's menu bar. |
 | `cursor_position` | Where the pointer is. |
+| `find` | Locate something by its text, scrolling to reach it. Returns coordinates. |
+
+### Finding things on a long page
+
+`find` is the cheap answer to "where is X". It searches the accessibility tree,
+scrolls if the match is not on screen, and stops the moment it finds one:
+
+```jsonc
+{"text": "Save"}                              // frontmost app
+{"text": "Total", "pid": 1234, "max_scrolls": 20}
+{"text": "Submit", "interactive_only": true}  // ignore matching static text
+```
+
+Pass `pid` whenever you can. It makes the search much faster, and it is what
+lets `find` read the scroll position — so it can stop at the bottom and say so,
+instead of scrolling a fixed number of times and reporting nothing useful.
+
+This is deliberately not a screenshot loop. Capturing a long page screen by
+screen costs one model round trip and one image per screen, and the answer is
+usually a single coordinate. `find` returns that coordinate, the text it
+matched, and how many scrolls it took.
+
+**Reading a whole long page is a different problem, and this is not it.** A
+stitched full-page image is unreadable once downscaled to a payload budget — at
+ten screens it is about 256 pixels wide. If you need the whole content rather
+than one location, use `snapshot` on the scroll area, or ask for the page in
+pieces with `zoom`.
 
 ### Menus
 

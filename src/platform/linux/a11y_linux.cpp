@@ -92,6 +92,10 @@ public:
                    "Meanwhile, most menu commands have a keyboard shortcut: use `key`.");
     }
 
+    Result<std::vector<ScrollRegion>> scroll_regions(int) override {
+        return err(ErrorCode::Unsupported, "scroll-position reading is macOS-only so far");
+    }
+
     Status set_value(const Node&, std::string_view) override { return unavailable(); }
 
 private:

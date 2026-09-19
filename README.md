@@ -8,7 +8,7 @@
 **Let a model drive your desktop — and the phones on it.**
 
 One small binary, no runtime, no dependencies. Point any MCP client at it and
-the model gets 33 tools: screenshots, clicks, typing, multi-touch gestures,
+the model gets 34 tools: screenshots, clicks, typing, multi-touch gestures,
 window and app control, the accessibility tree, and any iOS simulator, Android
 emulator or mirrored handset visible on screen. macOS, Windows and Linux.
 
@@ -92,6 +92,7 @@ launch it. A Linux binary inside WSL cannot reach the Windows desktop:
 | | |
 |---|---|
 | **See** | Screenshot the desktop, a display, a window or a region. `snapshot` adds the accessibility tree with every clickable element numbered. `zoom` re-reads small text at full resolution. |
+| **Find** | `find` locates something by its text and scrolls to reach it, returning coordinates — instead of capturing a long page screen by screen. |
 | **Point** | Move, click (single, double, triple, hover), five buttons, scroll by line or by pixel, drag and drop, freehand strokes. |
 | **Type** | Chords like `cmd+shift+a`, sequences, hold-for-duration, and Unicode typed directly — emoji and CJK do not depend on your keyboard layout. |
 | **Touch** | Pinch, rotate, n-finger swipe and pan, long press, force press, edge swipe. Up to 10 contacts where the OS allows it. |

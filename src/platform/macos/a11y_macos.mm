@@ -488,6 +488,61 @@ public:
         return result;
     }
 
+    static void collect_scroll_regions(AXUIElementRef el, int depth,
+                                       std::vector<ScrollRegion>& out) {
+        if (depth < 0 || out.size() > 64) return;
+
+        if (string_attr(el, kAXRoleAttribute) == "AXScrollArea") {
+            ScrollRegion r;
+            frame_attr(el, &r.bounds);
+            // AXValue on the scroll bar is the thumb position as a fraction.
+            // It is the only part of the scroll state AX exposes reliably;
+            // the visible proportion is not standardised across toolkits.
+            if (CFTypeRef bar = copy_attr(el, CFSTR("AXVerticalScrollBar"))) {
+                if (CFTypeRef v = copy_attr(static_cast<AXUIElementRef>(bar), kAXValueAttribute)) {
+                    if (CFGetTypeID(v) == CFNumberGetTypeID()) {
+                        double d = 0;
+                        CFNumberGetValue(static_cast<CFNumberRef>(v), kCFNumberDoubleType, &d);
+                        r.vertical = d;
+                        r.at_end = d >= 0.999;
+                    }
+                    CFRelease(v);
+                }
+                CFRelease(bar);
+            }
+            out.push_back(r);
+        }
+
+        CFTypeRef children = copy_attr(el, kAXChildrenAttribute);
+        if (!children) return;
+        CFArrayRef arr = static_cast<CFArrayRef>(children);
+        for (CFIndex i = 0; i < CFArrayGetCount(arr) && i < 200; ++i) {
+            collect_scroll_regions(
+                static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(arr, i))),
+                depth - 1, out);
+        }
+        CFRelease(children);
+    }
+
+    Result<std::vector<ScrollRegion>> scroll_regions(int pid) override {
+        AXUIElementRef app = AXUIElementCreateApplication(static_cast<pid_t>(pid));
+        if (!app) return err(ErrorCode::NotFound, "no application with pid " + std::to_string(pid));
+
+        std::vector<ScrollRegion> out;
+        CFTypeRef windows = copy_attr(app, kAXWindowsAttribute);
+        if (windows) {
+            CFArrayRef arr = static_cast<CFArrayRef>(windows);
+            for (CFIndex i = 0; i < CFArrayGetCount(arr); ++i) {
+                collect_scroll_regions(
+                    static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(arr, i))),
+                    12, out);
+            }
+            CFRelease(windows);
+        }
+        CFRelease(app);
+        return out;
+    }
+
     Result<Node> element_at(const Point& p) override {
         @autoreleasepool {
             if (auto st = check_permission(false); !st) return st.error();
