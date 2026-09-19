@@ -141,13 +141,47 @@ jobs:
           MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
         run: |
           echo "$MACOS_NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          trap 'rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/notarize.zip"' EXIT
           ditto -c -k --keepParent build/computer-control-mcp "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+          SUBMISSION=$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --key "$RUNNER_TEMP/AuthKey.p8" \
             --key-id "$MACOS_NOTARY_KEY_ID" \
             --issuer "$MACOS_NOTARY_ISSUER" \
-            --wait --timeout 20m
-          rm -f "$RUNNER_TEMP/AuthKey.p8"
+            --no-wait --output-format json)
+          SUBMISSION_ID=$(printf '%s\n' "$SUBMISSION" | jq -er '.id')
+          echo "Apple notarization submission: $SUBMISSION_ID"
+
+          # Apple can leave a healthy submission in "In Progress" for longer
+          # than notarytool's blocking wait. Submit asynchronously, then poll
+          # so a slow service does not turn a valid release into a false
+          # failure while still giving the job a finite upper bound.
+          deadline=$(( $(date +%s) + 3600 ))
+          while :; do
+            INFO=$(xcrun notarytool info "$SUBMISSION_ID" \
+              --key "$RUNNER_TEMP/AuthKey.p8" \
+              --key-id "$MACOS_NOTARY_KEY_ID" \
+              --issuer "$MACOS_NOTARY_ISSUER" \
+              --output-format json)
+            STATUS=$(printf '%s\n' "$INFO" | jq -r '.status // "Unknown"')
+            echo "Apple notarization status: $STATUS"
+
+            case "$STATUS" in
+              Accepted)
+                break
+                ;;
+              Invalid|Rejected)
+                printf '%s\n' "$INFO"
+                exit 1
+                ;;
+            esac
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "Apple notarization did not finish within 60 minutes."
+              printf '%s\n' "$INFO"
+              exit 1
+            fi
+            sleep 30
+          done
 
       - uses: actions/upload-artifact@v4
         with:
