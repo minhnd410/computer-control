@@ -142,6 +142,18 @@ breaks the build until the docs catch up, which is the point. If you write a
 new counted claim, pin it the same way instead of trusting the next person to
 remember.
 
+## Before tagging a release
+
+**Check CI is green on the commit you are about to tag.** Not a background
+watcher streaming every job - one `gh run list --workflow=ci.yml --limit 1`
+before `git tag`. Eight releases went out on red because a test that assumed
+the macOS client list failed on Linux, and nobody was looking. Local `ctest`
+passing is not the same evidence: it only ever runs one platform's branches.
+
+A test that checks a platform-conditional thing needs to assert on something
+present on every platform, or it silently checks nothing where that thing is
+absent - which is the shape the failure took.
+
 ## Style
 
 Match the surrounding code. Notable conventions:

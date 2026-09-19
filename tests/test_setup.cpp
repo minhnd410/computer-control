@@ -5,10 +5,12 @@
 // editor configuration, which is the worst failure mode in this project. Every
 // case here is about not damaging what is already in the file.
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "core/json.hpp"
 #include "mcp/setup.hpp"
@@ -181,6 +183,21 @@ TEST(setup_appends_to_toml_without_touching_what_is_there) {
     remove_file(path);
 }
 
+TEST(setup_lists_the_clients_that_exist_on_this_platform) {
+    // Guards the platform split itself. Claude Desktop and Zed are absent on
+    // some platforms; the ones below are on all of them, and a test that
+    // silently checks nothing is worse than no test.
+    const auto targets = mcp::client_targets();
+    std::vector<std::string> ids;
+    for (const auto& t : targets) ids.push_back(t.id);
+    for (const char* required : {"claude-code", "vscode", "cursor", "windsurf", "codex"}) {
+        char note[128];
+        std::snprintf(note, sizeof(note), "'%s' is missing from this platform's list", required);
+        ::test::report(std::find(ids.begin(), ids.end(), required) != ids.end(),
+                       "client is listed on every platform", __FILE__, __LINE__, note);
+    }
+}
+
 TEST(setup_knows_where_each_client_keeps_its_config) {
     const auto targets = mcp::client_targets();
     CHECK(targets.size() >= 5);
@@ -254,7 +271,12 @@ TEST(setup_knows_which_clients_can_reach_an_http_endpoint) {
                            "codex mcp add --url writes a url entry");
             saw_http = true;
         }
-        if (t.id == "claude-desktop") {
+        // Windsurf rather than Claude Desktop as the stdio-only sentinel:
+        // Claude Desktop has no Linux build, so it is absent from the list
+        // there and this assertion never ran - which is how it failed on
+        // Linux CI while passing on the machine it was written on. Windsurf is
+        // added on every platform.
+        if (t.id == "claude-desktop" || t.id == "windsurf") {
             char note[128];
             std::snprintf(note, sizeof(note), "%s should stay stdio-only", t.id.c_str());
             ::test::report(!t.supports_http, "client is stdio-only", __FILE__, __LINE__, note);
