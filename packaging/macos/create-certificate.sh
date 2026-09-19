@@ -84,17 +84,36 @@ RESPONSE=$(curl -sS -X POST https://api.appstoreconnect.apple.com/v1/certificate
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BODY")
 
 if printf '%s' "$RESPONSE" | grep -q '"errors"'; then
+  # Print whatever came back even if it does not parse. An error reporter that
+  # can fail is worse than none: it hides the message it exists to show.
   printf '%s\n' "$RESPONSE" | python3 -c '
 import json, sys
-for e in json.load(sys.stdin).get("errors", []):
-    print(f"  {e.get(\"title\")}: {e.get(\"detail\")}")
+raw = sys.stdin.read()
+try:
+    for e in json.loads(raw).get("errors", []):
+        title = e.get("title", "")
+        detail = e.get("detail", "")
+        code = e.get("code", "")
+        print("  " + title)
+        if detail and detail != title:
+            print("    " + detail)
+        if code:
+            print("    code: " + code)
+except Exception:
+    print("  (unparsed response)")
+    print(raw[:2000])
 ' >&2
-  die "Apple refused the request (an Admin-role key and a paid membership are both required)"
+  die "Apple refused the request"
 fi
 
 printf '%s' "$RESPONSE" | python3 -c '
 import base64, json, sys
-d = json.load(sys.stdin)["data"]["attributes"]
+raw = sys.stdin.read()
+try:
+    d = json.loads(raw)["data"]["attributes"]
+except Exception:
+    sys.stderr.write("unexpected response from Apple:\n" + raw[:2000] + "\n")
+    raise SystemExit(1)
 sys.stdout.buffer.write(base64.b64decode(d["certificateContent"]))
 ' > "$OUT"
 
