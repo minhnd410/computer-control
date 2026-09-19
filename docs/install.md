@@ -23,8 +23,15 @@ That pulls the prebuilt archive for your platform from the release and puts
 Upgrading:
 
 ```bash
-brew upgrade computer-control
+brew update && brew upgrade computer-control
 ```
+
+`brew update` first is not superstition. `brew upgrade` compares against the
+copy of the formula in your local tap clone, and Homebrew only refreshes taps
+periodically — so right after a release it will often say there is nothing to
+do, because as far as it knows there isn't. `brew update` fetches the tap and
+then the upgrade sees the new version. This is ordinary third-party-tap
+behaviour, not something this formula does.
 
 The formula lives in [minhnd410/homebrew-tap](https://github.com/minhnd410/homebrew-tap)
 and is rewritten by CI on every release, with the checksums CI computed — so the

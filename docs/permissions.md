@@ -79,6 +79,20 @@ Codex is the one client that reads its token from the environment rather than it
 export CC_AUTH_TOKEN=$(cat ~/.config/computer-control/token)
 ```
 
+### If you decide not to grant one
+
+`setup` waits for each permission rather than assuming, but waiting is not the
+same as insisting. Press **enter** to skip the one it is waiting on and move to
+the next, or **Ctrl-C** to stop the walkthrough entirely — it will not go on to
+ask about the rest. Either way it reloads the service, tells you what ended up
+ungranted, and exits non-zero so a script can notice.
+
+Skipping is not destructive. Run `setup` again, or grant it in System Settings
+and `setup --restart`, whenever you want.
+
+Tools that need a permission you declined will fail with a message naming it,
+rather than appearing to work.
+
 ### Two things that look like bugs and are not
 
 **A grant is read when the process starts.** Enabling the checkbox while the

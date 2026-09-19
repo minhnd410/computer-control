@@ -7,8 +7,10 @@
 #include <iostream>
 #include <sstream>
 
+#include <atomic>
 #include <chrono>
 #include <climits>
+#include <csignal>
 #include <thread>
 
 #include "cc/permissions.hpp"
@@ -926,29 +928,79 @@ void service_request(const std::string& name) {
     (void)devices::exec("curl", args, std::chrono::milliseconds{25000});
 }
 
-// Returns true once granted. Prints a live line while it waits.
-bool wait_for_permission(const std::string& name, const std::string& label, int seconds) {
+// Interrupted with Ctrl-C. A flag rather than exiting inside the handler, so
+// the loop unwinds normally and the summary still prints - quitting halfway
+// through leaves someone with no idea which permissions actually took.
+std::atomic<bool> g_interrupted{false};
+
+void on_interrupt(int) {
+    g_interrupted = true;
+}
+
+enum class WaitOutcome { Granted, Skipped, TimedOut, Interrupted };
+
+// Waits for one permission, watching the clock and stdin at the same time.
+WaitOutcome wait_for_permission(const std::string& name, const std::string& label, int seconds) {
     const char* spin = "|/-\\";
+    auto previous = std::signal(SIGINT, on_interrupt);
+    g_interrupted = false;
+
+    WaitOutcome outcome = WaitOutcome::TimedOut;
     for (int i = 0; i < seconds * 4; ++i) {
-        const std::string state = service_permission_state(name);
-        if (state == "granted") {
-            std::cout << "\r\x1b[2K  " << green(mark_ok()) << " " << label << "  " << dim("granted")
-                      << "\n"
-                      << std::flush;
-            return true;
+        if (g_interrupted) {
+            outcome = WaitOutcome::Interrupted;
+            break;
+        }
+        if (service_permission_state(name) == "granted") {
+            outcome = WaitOutcome::Granted;
+            break;
         }
         if (color_enabled()) {
             std::cout << "\r\x1b[2K  " << cyan(std::string(1, spin[i % 4])) << " " << label << "  "
-                      << dim("waiting for you to allow it...") << std::flush;
+                      << dim("waiting... press enter to skip") << std::flush;
         } else if (i == 0) {
-            std::cout << "  .. " << label << "  waiting for you to allow it...\n" << std::flush;
+            std::cout << "  .. " << label << "  waiting, press enter to skip\n" << std::flush;
         }
+
+#if !defined(_WIN32)
+        // Poll stdin alongside the clock, so someone who has decided not to
+        // grant it is not held for three minutes by a loop that only watches
+        // the permission.
+        fd_set set;
+        FD_ZERO(&set);
+        FD_SET(STDIN_FILENO, &set);
+        timeval tv{0, 250000};
+        if (::select(STDIN_FILENO + 1, &set, nullptr, nullptr, &tv) > 0) {
+            std::string ignored;
+            std::getline(std::cin, ignored);
+            outcome = WaitOutcome::Skipped;
+            break;
+        }
+#else
         std::this_thread::sleep_for(std::chrono::milliseconds{250});
+#endif
     }
-    std::cout << "\r\x1b[2K  " << yellow(mark_bad()) << " " << label << "  "
-              << yellow("still not granted") << "\n"
-              << std::flush;
-    return false;
+
+    std::signal(SIGINT, previous);
+
+    std::cout << "\r\x1b[2K  ";
+    switch (outcome) {
+        case WaitOutcome::Granted:
+            std::cout << green(mark_ok()) << " " << label << "  " << dim("granted") << "\n";
+            break;
+        case WaitOutcome::Skipped:
+            std::cout << yellow(mark_bad()) << " " << label << "  " << yellow("skipped") << "\n";
+            break;
+        case WaitOutcome::Interrupted:
+            std::cout << yellow(mark_bad()) << " " << label << "  " << yellow("cancelled") << "\n";
+            break;
+        case WaitOutcome::TimedOut:
+            std::cout << yellow(mark_bad()) << " " << label << "  "
+                      << yellow("not granted after " + std::to_string(seconds) + "s") << "\n";
+            break;
+    }
+    std::cout << std::flush;
+    return outcome;
 }
 
 }  // namespace
@@ -1006,10 +1058,13 @@ bool guide_permissions(bool assume_yes) {
                   << dim("      " + grantee) << "\n"
                   << dim("    A dialog may also appear; either way works.") << "\n";
         if (!assume_yes) {
-            std::cout << dim("    Ctrl-C to skip this.") << "\n";
+            std::cout << dim("    Press enter to skip, Ctrl-C to stop.") << "\n";
         }
 
-        if (!wait_for_permission(step.id, step.label, 180)) all = false;
+        const WaitOutcome outcome = wait_for_permission(step.id, step.label, 180);
+        if (outcome != WaitOutcome::Granted) all = false;
+        // Cancelling means cancelling, not "ask me about the next one too".
+        if (outcome == WaitOutcome::Interrupted) break;
     }
     return all;
 }
