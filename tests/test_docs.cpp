@@ -108,3 +108,35 @@ TEST(docs_every_tool_is_documented_somewhere) {
                        __FILE__, __LINE__, note);
     }
 }
+
+#if defined(__APPLE__)
+#include <AvailabilityMacros.h>
+#include <TargetConditionals.h>
+
+TEST(docs_macos_minimum_matches_what_we_build_for) {
+    // CMake has to set CMAKE_OSX_DEPLOYMENT_TARGET before project(), and if it
+    // ever stops doing so the binary silently takes the build machine's SDK as
+    // its floor. That failure is invisible on the machine that produced it and
+    // total everywhere else - v0.8.1 shipped requiring macOS 26 while the
+    // Homebrew formula promised Monterey. Pin it to the one number the docs
+    // name, so a lost deployment target fails here instead of in an install.
+    const int built_for = __MAC_OS_X_VERSION_MIN_REQUIRED;
+
+    char note[192];
+    std::snprintf(note, sizeof(note),
+                  "built for macOS %d.%d but 14.0 is the floor SCScreenshotManager needs; "
+                  "CMAKE_OSX_DEPLOYMENT_TARGET is not being applied",
+                  built_for / 10000, (built_for / 100) % 100);
+    ::test::report(built_for == 140000, "macOS deployment target is 14.0", __FILE__, __LINE__,
+                   note);
+
+    // The number a reader acts on lives in the install docs, so pin that too:
+    // raising the target without saying so strands people on a version the
+    // page still tells them is fine.
+    const std::string doc = read_file("docs/install.md");
+    if (doc.empty()) SKIP("docs/install.md is not readable from the build directory");
+    ::test::report(doc.find("macOS 14") != std::string::npos,
+                   "docs/install.md states the macOS 14 minimum", __FILE__, __LINE__,
+                   "the deployment target and the documented minimum have diverged");
+}
+#endif

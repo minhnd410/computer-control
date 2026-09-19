@@ -69,11 +69,53 @@ sha256_of() {
     fi
 }
 
+# The archive is a dynamically linked binary, not a self-contained one, and the
+# two ways it fails to start are both silent until you run it. Check before
+# copying anything: an install that reports success and then cannot launch is
+# the worst of the outcomes available here.
+
+# macOS: the binary is built against a 14.0 deployment target because the
+# capture path needs SCScreenshotManager. Below that, dyld refuses to load it
+# and prints nothing a person can act on.
+check_macos_version() {
+    have=$(sw_vers -productVersion 2>/dev/null) || return 0
+    major=${have%%.*}
+    case "$major" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    if [ "$major" -lt 14 ]; then
+        die "this needs macOS 14 or newer; you are on $have.
+       Screen capture uses SCScreenshotManager, which does not exist before 14.
+       Nothing published here will run on this version."
+    fi
+}
+
+# Linux: X11 is linked dynamically, and a server install or a slim container
+# has none of it. ldd names exactly what is missing, so use it rather than
+# guessing from the distribution.
+check_linux_libraries() {
+    command -v ldd >/dev/null 2>&1 || return 0
+    missing=$(ldd "$1" 2>/dev/null | awk '/not found/ { print $1 }' | sort -u)
+    [ -n "$missing" ] || return 0
+
+    warn "error: this binary needs shared libraries this system does not have:"
+    for lib in $missing; do warn "         $lib"; done
+    warn "
+       Install them, then re-run this script:
+         Debian/Ubuntu  sudo apt install libx11-6 libxtst6 libxrandr2 libxfixes3 zlib1g
+         Fedora/RHEL    sudo dnf install libX11 libXtst libXrandr libXfixes zlib
+         Arch           sudo pacman -S libx11 libxtst libxrandr libxfixes zlib
+       Nothing has been installed."
+    exit 1
+}
+
 main() {
     need curl
     need tar
 
     TARGET=$(target)
+    case "$TARGET" in macos-*) check_macos_version ;; esac
+
     PREFIX=$(choose_prefix)
     ARCHIVE="computer-control-$TARGET.tar.gz"
 
@@ -111,6 +153,8 @@ main() {
     tar -xzf "$TMP/$ARCHIVE" -C "$TMP" || die "archive is corrupt"
     BIN="$TMP/computer-control/computer-control-mcp"
     [ -f "$BIN" ] || die "unexpected archive layout: no computer-control/computer-control-mcp"
+
+    case "$TARGET" in linux-*) check_linux_libraries "$BIN" ;; esac
 
     SUDO=""
     if [ ! -w "$PREFIX/bin" ] 2>/dev/null; then

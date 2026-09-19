@@ -43,6 +43,11 @@ Both verify the published SHA256 before installing, and abort on a mismatch.
 Or take the archive straight from
 [Releases](https://github.com/minhnd410/computer-control/releases).
 
+Needs **macOS 14+**, Windows 10+, or a Linux desktop with the X11 client
+libraries — [the full list](docs/install.md#what-it-still-needs). No runtime,
+no toolchain. The installers check first and stop with the remedy rather than
+leaving you a binary that will not start.
+
 ### Building it yourself
 
 Only if you want to change it, or you are on a platform with no archive:

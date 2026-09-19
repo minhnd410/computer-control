@@ -1,6 +1,22 @@
 # SPDX-License-Identifier: MIT
 cmake_minimum_required(VERSION 3.20)
 
+# Must precede project(). Without it the binary inherits the build machine's
+# SDK as its minimum, so a release built on a current runner refuses to launch
+# on anything older - invisible to whoever built it, fatal to everyone else.
+# v0.8.1 shipped requiring macOS 26 while Homebrew promised Monterey.
+#
+# 14.0, not 12.3: ScreenCaptureKit arrived in 12.3, but the capture path calls
+# SCScreenshotManager, which is 14.0. Lowering this below 14 needs a real
+# SCStream fallback behind @available first - setting it alone just moves the
+# failure from launch time to a capture that times out and blames permissions.
+if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+  # Deliberately not a CACHE entry: CMake seeds an empty one, and
+  # `set(... CACHE)` will not overwrite that, so the target would be silently
+  # dropped in any build directory configured before this existed.
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
+endif()
+
 project(computer_control
   VERSION 0.8.2
         DESCRIPTION "Cross-platform desktop and mobile-simulator automation core"

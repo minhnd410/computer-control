@@ -82,6 +82,24 @@ and pin a version with `CC_VERSION=v0.8.1`.
 Homebrew and winget are still the better choice where you have them: they know
 how to upgrade and uninstall, and these scripts do not.
 
+### What it still needs
+
+The binary has no bundled runtime and no toolchain requirement, but it is
+dynamically linked, so the platform has to supply a few things. Both scripts
+check before copying anything and stop with the exact remedy rather than
+installing something that cannot start.
+
+| | |
+|---|---|
+| **The script itself** | `curl`, `tar`, and `shasum` or `sha256sum`. Present by default on macOS and on every mainstream Linux; if you are piping this from `curl` you already have the one that is ever missing. |
+| **macOS** | **macOS 14 or newer.** Screen capture uses `SCScreenshotManager`, which does not exist before 14, so the binary is built with a matching deployment target and dyld refuses to load it on anything older. No frameworks to install — everything else it links is part of the OS. |
+| **Linux** | X11 client libraries: `libX11`, `libXtst`, `libXrandr`, `libXfixes`, and `zlib`. A desktop install has these already; a server image or a slim container has none of them.<br><br>`sudo apt install libx11-6 libxtst6 libxrandr2 libxfixes3 zlib1g`<br>`sudo dnf install libX11 libXtst libXrandr libXfixes zlib`<br>`sudo pacman -S libx11 libxtst libxrandr libxfixes zlib`<br><br>These are the runtime packages, not the `-dev` ones under [Build from source](#build-from-source). |
+| **Windows** | Nothing. |
+| **Linux on arm64** | No archive is published; `install.sh` refuses rather than installing the x86_64 one. Build from source. |
+
+None of this replaces the macOS permission grants — those are the same whatever
+you install with, and `computer-control-mcp setup` walks through them.
+
 ## Download an archive
 
 Every release attaches an archive per platform plus a `.sha256` beside it.

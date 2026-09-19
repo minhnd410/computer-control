@@ -10,7 +10,10 @@ class ComputerControl < Formula
   license "MIT"
 
   on_macos do
-    depends_on macos: :monterey # ScreenCaptureKit needs 12.3+
+    # Sonoma, not Monterey: the capture path calls SCScreenshotManager (14.0),
+    # and the binary is built with a matching deployment target. Promising
+    # Monterey here installed a binary that dyld then refused to load.
+    depends_on macos: :sonoma
     on_arm do
       url "https://github.com/minhnd410/computer-control/releases/download/v@@VERSION@@/computer-control-macos-arm64.tar.gz"
       sha256 "@@SHA_MACOS_ARM64@@"
