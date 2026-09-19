@@ -244,6 +244,18 @@ void print_permission_summary() {
         std::cout << "  [" << mark << "] " << to_string(st.permission) << "  "
                   << to_string(st.state) << "\n";
     }
+
+    // Saying "granted" without saying who holds it sends people looking in
+    // System Settings for a row that is never going to be there. On macOS a
+    // grant belongs to the responsible process - the terminal or client that
+    // launched this - so the binary's own name does not appear at all.
+    const std::string owner = permission_owner();
+    if (!owner.empty()) {
+        std::cout << "\n  These are " << owner
+                  << "'s grants, inherited because it launched this process.\n"
+                  << "  computer-control-mcp will not appear in System Settings on its own;\n"
+                  << "  that is normal. `computer-control-mcp --doctor` explains it in full.\n";
+    }
 }
 
 }  // namespace
