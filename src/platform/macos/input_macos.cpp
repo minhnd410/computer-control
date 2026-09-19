@@ -31,6 +31,7 @@
 #include <thread>
 
 #include "cc/input.hpp"
+#include "cc/permissions.hpp"
 #include "core/motion.hpp"
 
 namespace cc {
@@ -912,6 +913,25 @@ private:
 }  // namespace
 
 Result<std::unique_ptr<InputBackend>> InputBackend::create(std::shared_ptr<DisplayGraph> displays) {
+    // Without Accessibility, CGEventPost succeeds and the event goes nowhere.
+    // There is no error code, no exception, nothing to detect after the fact -
+    // clicks and keystrokes simply have no effect, which reads as "the tool is
+    // broken" rather than "a permission is missing". Refusing to create the
+    // backend at all turns the worst failure mode in the project into an
+    // ordinary error that names its own fix.
+    const auto status = check_permission(Permission::Accessibility);
+    if (status.state != PermissionState::Granted) {
+        return err(ErrorCode::PermissionDenied,
+                   "Accessibility permission is required to send input. Without it macOS "
+                   "accepts every event and delivers none, so clicks and keystrokes would "
+                   "silently do nothing.",
+                   status.remedy.empty()
+                       ? std::string("Run `computer-control-mcp setup`, or grant it under System "
+                                     "Settings > Privacy & Security > Accessibility and restart "
+                                     "this process.")
+                       : status.remedy);
+    }
+
     auto backend = std::make_unique<MacInput>(std::move(displays));
     if (auto st = backend->initialize(); !st) return st.error();
     return std::unique_ptr<InputBackend>(std::move(backend));

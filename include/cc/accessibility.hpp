@@ -123,6 +123,16 @@ struct Tree {
     std::chrono::milliseconds elapsed{0};
 };
 
+// One entry in an application's menu bar. `path` is what invoke_menu takes.
+struct MenuEntry {
+    std::vector<std::string> path;  // e.g. {"File", "Save As\u2026"}
+    std::string title;
+    std::string shortcut;  // as shown to a user, e.g. "cmd+shift+s"
+    bool enabled = true;
+    bool has_submenu = false;
+    bool separator = false;
+};
+
 class AccessibilityBackend {
 public:
     virtual ~AccessibilityBackend() = default;
@@ -141,6 +151,14 @@ public:
     virtual Result<Node> focused_element() = 0;
     virtual Status perform_action(const Node& node, std::string_view action) = 0;
     virtual Status set_value(const Node& node, std::string_view value) = 0;
+
+    // The menu bar, which the ordinary tree walk does not reach: a menu's
+    // contents are a separate hierarchy that most toolkits populate only when
+    // the menu opens. Reading it through the accessibility API gets the whole
+    // command surface of an application without opening anything, and
+    // invoking a path is far more reliable than driving menus by pixel.
+    virtual Result<std::vector<MenuEntry>> menu_bar(int pid, int depth) = 0;
+    virtual Status invoke_menu(int pid, const std::vector<std::string>& path) = 0;
 
 protected:
     std::shared_ptr<DisplayGraph> displays_;

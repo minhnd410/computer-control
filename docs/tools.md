@@ -1,7 +1,7 @@
 <!-- Split out of the README; see the table of contents there. -->
 # Tool reference
 
-32 tools exist; 31 are advertised by default, because `registry` stays hidden
+33 tools exist; 32 are advertised by default, because `registry` stays hidden
 unless you pass `--allow-registry`. A disabled tool is not listed at all rather
 than listed and refusing, so the model's attention is not spent on it.
 
@@ -25,7 +25,36 @@ the registry by the test suite, so they cannot drift.
 | `snapshot` | Screenshot *and* accessibility tree, every interactive element given a number. The label is what later calls should target. |
 | `zoom` | Re-capture a region at full resolution, to read text too small to survive downscaling. |
 | `elements` | Query the accessibility tree with no screenshot: the whole tree, the element under a point, or the focused one. |
+| `menu` | Read or invoke an application's menu bar. |
 | `cursor_position` | Where the pointer is. |
+
+### Menus
+
+`menu` reads an application's menu bar through the accessibility API, which
+means it sees the **entire** command surface — including commands that have no
+toolbar button and no keyboard shortcut — and it reads without opening anything
+on screen.
+
+```jsonc
+{"mode": "list"}                                  // frontmost app, top level + items
+{"mode": "list", "depth": 2}                      // descend into submenus too
+{"mode": "select", "path": ["File", "Save As…"]}  // or "File > Save As…"
+```
+
+Prefer this to clicking menus by pixel. A pixel click has to open the menu,
+keep it open, and hit a target whose position depends on the window, the
+theme and how many items are above it; a path does none of that. The listing
+includes each item's keyboard shortcut, so a model can often skip the menu
+entirely and press the chord instead.
+
+Selecting a disabled item fails and says so rather than appearing to succeed —
+menu items enable themselves based on context, so that usually means the
+application is not in the state the command needs.
+
+**macOS only so far.** Windows exposes menus through UI Automation and Linux
+through AT-SPI, so both are implementable; neither is implemented, and `menu`
+says that rather than returning an empty list that reads as "this application
+has no menus".
 
 ### Pointer
 

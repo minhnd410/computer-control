@@ -8,7 +8,7 @@
 **Let a model drive your desktop — and the phones on it.**
 
 One small binary, no runtime, no dependencies. Point any MCP client at it and
-the model gets 32 tools: screenshots, clicks, typing, multi-touch gestures,
+the model gets 33 tools: screenshots, clicks, typing, multi-touch gestures,
 window and app control, the accessibility tree, and any iOS simulator, Android
 emulator or mirrored handset visible on screen. macOS, Windows and Linux.
 
@@ -75,9 +75,10 @@ computer-control-mcp setup --client cursor,zed    # no prompts
 computer-control-mcp --doctor                     # permissions and capabilities
 ```
 
-On **macOS the two permissions are not optional** — without them every tool
-appears to work and silently does nothing. `setup` asks for them; `--doctor`
-tells you what is still missing and names the exact settings pane. See
+On **macOS two permissions are still required** — Accessibility for input and
+the element tree, Screen Recording for captures. `setup` asks for them. If one
+is missing, tools now refuse with a message naming the settings pane rather
+than appearing to work; `--doctor` shows the current state. See
 [permissions](docs/permissions.md).
 
 Using **Claude Code inside WSL**? Install the *Windows* build and have WSL
@@ -95,6 +96,7 @@ launch it. A Linux binary inside WSL cannot reach the Windows desktop:
 | **Type** | Chords like `cmd+shift+a`, sequences, hold-for-duration, and Unicode typed directly — emoji and CJK do not depend on your keyboard layout. |
 | **Touch** | Pinch, rotate, n-finger swipe and pan, long press, force press, edge swipe. Up to 10 contacts where the OS allows it. |
 | **Manage** | List, focus, move, resize and close windows. Launch and quit apps. Open the launcher, switch desktops, show notifications. |
+| **Menus** | Read an application's whole menu bar and invoke any item by path — including commands with no button and no shortcut. macOS for now. |
 | **Phones** | Drive an iOS simulator, Android emulator or mirrored handset in its own coordinate space. |
 
 Two things worth knowing before you trust it with anything:
@@ -156,34 +158,6 @@ This binary can do anything you can do at the keyboard.
 [SECURITY.md](SECURITY.md) has the threat model.
 
 ---
-
-## Documentation
-
-| | |
-|---|---|
-| [Install](docs/install.md) | Every method, per platform, and building from source. |
-| [MCP server](docs/mcp.md) | Client config, protocol revisions, transports, tool gating. |
-| [Tool reference](docs/tools.md) | All 32 tools and what each is for. |
-| [Permissions](docs/permissions.md) | Per-platform grants, and the macOS responsible-process trap. |
-| [Gestures](docs/gestures.md) | What is real and what is emulated, per platform. |
-| [Coordinate spaces](docs/coordinate-spaces.md) | Logical, physical, image; mixed DPI; device points. |
-| [Devices](docs/devices.md) | iOS simulators, Android emulators, mirrored handsets. |
-| [WSL](docs/wsl.md) | Why the server must run on the Windows side. |
-| [JSON payloads](docs/json-schema.md) | Every structured result the tools return. |
-| [Embedding](docs/embedding.md) | Using the C++ library directly. |
-| [Architecture](docs/architecture.md) | How the pieces fit, for contributors. |
-| [Tool comparison](docs/tool-comparison.md) | What came from Windows-MCP and macOS-MCP, and what did not. |
-
----
-
-## Prior art
-
-The tool surface is a superset of
-[Windows-MCP](https://github.com/CursorTouch/Windows-MCP) and
-[macOS-MCP](https://github.com/CursorTouch/MacOS-MCP), both MIT-licensed and
-worth reading. This project differs in being one C++ core across three desktop
-platforms with an explicit coordinate-space model, honest fidelity reporting,
-and mobile-device support.
 
 ## License
 

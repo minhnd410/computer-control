@@ -304,6 +304,190 @@ public:
         }
     }
 
+    // --- menu bar -------------------------------------------------------
+    //
+    // AXMenuBar hangs off the application element, not off any window, which
+    // is why the ordinary tree walk never reaches it. Each AXMenuBarItem owns
+    // a single AXMenu child holding the actual items; that child exists in the
+    // accessibility hierarchy whether or not the menu has ever been opened, so
+    // the whole command surface can be read without disturbing the screen.
+
+    static std::string shortcut_of(AXUIElementRef item) {
+        // AXMenuItemCmdChar is the key; AXMenuItemCmdModifiers is a bitfield
+        // whose bits are, awkwardly, "not command" rather than "command".
+        const std::string key = string_attr(item, CFSTR("AXMenuItemCmdChar"));
+        if (key.empty()) return {};
+
+        long mods = 0;
+        if (CFTypeRef v = copy_attr(item, CFSTR("AXMenuItemCmdModifiers"))) {
+            if (CFGetTypeID(v) == CFNumberGetTypeID()) {
+                CFNumberGetValue(static_cast<CFNumberRef>(v), kCFNumberLongType, &mods);
+            }
+            CFRelease(v);
+        }
+        std::string out;
+        if (!(mods & 0x08)) out += "cmd+";  // bit set means command is absent
+        if (mods & 0x01) out += "shift+";
+        if (mods & 0x02) out += "alt+";
+        if (mods & 0x04) out += "ctrl+";
+        return out + key;
+    }
+
+    static void collect_menu(AXUIElementRef menu, std::vector<std::string> prefix, int depth,
+                             int budget, std::vector<MenuEntry>& out) {
+        if (depth < 0 || out.size() >= static_cast<std::size_t>(budget)) return;
+        CFTypeRef children = copy_attr(menu, kAXChildrenAttribute);
+        if (!children) return;
+        CFArrayRef arr = static_cast<CFArrayRef>(children);
+
+        for (CFIndex i = 0; i < CFArrayGetCount(arr); ++i) {
+            if (out.size() >= static_cast<std::size_t>(budget)) break;
+            AXUIElementRef item =
+                static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(arr, i)));
+
+            MenuEntry e;
+            e.title = string_attr(item, kAXTitleAttribute);
+            // A separator has no title; keeping it preserves the grouping a
+            // user sees, which is often what a menu's structure means.
+            e.separator = e.title.empty();
+            e.path = prefix;
+            if (!e.separator) e.path.push_back(e.title);
+            if (auto en = bool_attr(item, kAXEnabledAttribute)) e.enabled = *en;
+            e.shortcut = shortcut_of(item);
+
+            CFTypeRef sub = copy_attr(item, kAXChildrenAttribute);
+            AXUIElementRef submenu = nullptr;
+            if (sub) {
+                CFArrayRef subarr = static_cast<CFArrayRef>(sub);
+                if (CFArrayGetCount(subarr) > 0) {
+                    submenu = static_cast<AXUIElementRef>(
+                        const_cast<void*>(CFArrayGetValueAtIndex(subarr, 0)));
+                    e.has_submenu = true;
+                }
+            }
+            out.push_back(e);
+            if (submenu && !e.separator) {
+                collect_menu(submenu, e.path, depth - 1, budget, out);
+            }
+            if (sub) CFRelease(sub);
+        }
+        CFRelease(children);
+    }
+
+    Result<std::vector<MenuEntry>> menu_bar(int pid, int depth) override {
+        AXUIElementRef app = AXUIElementCreateApplication(static_cast<pid_t>(pid));
+        if (!app) return err(ErrorCode::NotFound, "no application with pid " + std::to_string(pid));
+
+        CFTypeRef bar = copy_attr(app, CFSTR("AXMenuBar"));
+        if (!bar) {
+            CFRelease(app);
+            return err(ErrorCode::Unsupported, "that application exposes no menu bar",
+                       "Agent-style and full-screen applications often have none. `app --mode "
+                       "list` shows what is running; try the frontmost regular application.");
+        }
+
+        std::vector<MenuEntry> out;
+        // The first level is the menu bar itself, so one extra level of
+        // descent is needed to reach the items a caller asked for.
+        collect_menu(static_cast<AXUIElementRef>(bar), {}, depth, 4000, out);
+        CFRelease(bar);
+        CFRelease(app);
+        return out;
+    }
+
+    Status invoke_menu(int pid, const std::vector<std::string>& path) override {
+        if (path.empty()) return err(ErrorCode::InvalidArgument, "menu path is empty");
+
+        AXUIElementRef app = AXUIElementCreateApplication(static_cast<pid_t>(pid));
+        if (!app) return err(ErrorCode::NotFound, "no application with pid " + std::to_string(pid));
+        CFTypeRef bar = copy_attr(app, CFSTR("AXMenuBar"));
+        if (!bar) {
+            CFRelease(app);
+            return err(ErrorCode::Unsupported, "that application exposes no menu bar");
+        }
+
+        AXUIElementRef level = static_cast<AXUIElementRef>(bar);
+        CFTypeRef owned_level = nullptr;  // retained when we descend a submenu
+        AXUIElementRef target = nullptr;
+        std::string walked;
+
+        for (std::size_t i = 0; i < path.size(); ++i) {
+            CFTypeRef children = copy_attr(level, kAXChildrenAttribute);
+            if (!children) break;
+            CFArrayRef arr = static_cast<CFArrayRef>(children);
+
+            AXUIElementRef match = nullptr;
+            for (CFIndex j = 0; j < CFArrayGetCount(arr); ++j) {
+                AXUIElementRef item =
+                    static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(arr, j)));
+                if (string_attr(item, kAXTitleAttribute) == path[i]) {
+                    match = item;
+                    break;
+                }
+            }
+            if (!match) {
+                CFRelease(children);
+                if (owned_level) CFRelease(owned_level);
+                CFRelease(bar);
+                CFRelease(app);
+                return err(ErrorCode::NotFound,
+                           "no menu item named \"" + path[i] + "\"" +
+                               (walked.empty() ? " in the menu bar" : " under " + walked),
+                           "`menu --mode list` prints the exact titles, including the ellipsis "
+                           "character that menu items ending in … actually use.");
+            }
+            walked += (walked.empty() ? "" : " > ") + path[i];
+
+            if (i + 1 == path.size()) {
+                target = match;
+                CFRetain(target);
+                CFRelease(children);
+                break;
+            }
+            // Descend into this item's submenu for the next component.
+            //
+            // CFArrayGetValueAtIndex hands back a borrowed reference, so the
+            // element must be retained before its containing array is
+            // released - otherwise the next iteration reads freed memory and
+            // the process dies, taking the MCP session with it.
+            CFTypeRef sub = copy_attr(match, kAXChildrenAttribute);
+            if (!sub || CFArrayGetCount(static_cast<CFArrayRef>(sub)) == 0) {
+                if (sub) CFRelease(sub);
+                CFRelease(children);
+                if (owned_level) CFRelease(owned_level);
+                CFRelease(bar);
+                CFRelease(app);
+                return err(ErrorCode::NotFound, walked + " has no submenu");
+            }
+            CFTypeRef next = CFArrayGetValueAtIndex(static_cast<CFArrayRef>(sub), 0);
+            CFRetain(next);
+            if (owned_level) CFRelease(owned_level);
+            owned_level = next;
+            level = static_cast<AXUIElementRef>(const_cast<void*>(next));
+            CFRelease(sub);
+            CFRelease(children);
+        }
+
+        Status result = ok();
+        if (!target) {
+            result = err(ErrorCode::NotFound, "menu path not found: " + walked);
+        } else {
+            if (auto enabled = bool_attr(target, kAXEnabledAttribute); enabled && !*enabled) {
+                result = err(ErrorCode::Unsupported, "\"" + walked + "\" is disabled right now",
+                             "Menu items enable themselves based on context - a selection, a "
+                             "saved document, a connected device. Put the application in the "
+                             "state the command needs first.");
+            } else if (AXUIElementPerformAction(target, kAXPressAction) != kAXErrorSuccess) {
+                result = err(ErrorCode::BackendFailure, "could not press \"" + walked + "\"");
+            }
+            CFRelease(target);
+        }
+        if (owned_level) CFRelease(owned_level);
+        CFRelease(bar);
+        CFRelease(app);
+        return result;
+    }
+
     Result<Node> element_at(const Point& p) override {
         @autoreleasepool {
             if (auto st = check_permission(false); !st) return st.error();

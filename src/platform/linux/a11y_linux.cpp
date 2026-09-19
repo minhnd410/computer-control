@@ -77,6 +77,21 @@ public:
     }
 
     Status perform_action(const Node&, std::string_view) override { return unavailable(); }
+    // The menu bar is reachable through this platform's accessibility API, but
+    // it is not implemented here yet and nobody has been able to test it on
+    // this platform. Saying so is better than returning an empty list that
+    // looks like "this application has no menus".
+    Result<std::vector<MenuEntry>> menu_bar(int, int) override {
+        return err(ErrorCode::Unsupported, "menu-bar reading is macOS-only so far",
+                   "AT-SPI exposes menus, so this is implementable - contributions welcome. "
+                   "Meanwhile, most menu commands have a keyboard shortcut: use `key`.");
+    }
+    Status invoke_menu(int, const std::vector<std::string>&) override {
+        return err(ErrorCode::Unsupported, "menu-bar invocation is macOS-only so far",
+                   "AT-SPI exposes menus, so this is implementable - contributions welcome. "
+                   "Meanwhile, most menu commands have a keyboard shortcut: use `key`.");
+    }
+
     Status set_value(const Node&, std::string_view) override { return unavailable(); }
 
 private:

@@ -762,6 +762,21 @@ const std::vector<ActionSpec>& registry() {
             "budget_ms":{"description":"Wall-clock budget for the walk.","type":"integer"}}})",
          true, false},
 
+        {"menu", "Menu",
+         "Read or invoke an application's menu bar. This is the whole command surface of a Mac "
+         "application, including commands with no button and no keyboard shortcut, and it reads "
+         "without opening anything on screen. Selecting by path is far more reliable than "
+         "clicking menus by pixel, which depends on the menu staying open while you aim.",
+         R"({"type":"object","properties":{
+            "mode":{"type":"string","enum":["list","select"],"default":"list",
+                    "description":"list reads the menu bar; select invokes one item."},
+            "pid":{"type":"integer","description":"Which application. Defaults to the frontmost one."},
+            "path":{"description":"For select: the item to invoke, as [\"File\",\"Save\"] or \"File > Save\".",
+                    "oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},
+            "depth":{"type":"integer","default":1,
+                     "description":"How far to descend. 1 gives each top-level menu and its items; 2 also opens their submenus."}}})",
+         false, false},
+
         {"clipboard", "Clipboard", "Read or write the clipboard.",
          R"({"type":"object","properties":{
             "mode":{"description":"read returns the current contents; write replaces them.","type":"string","enum":["get","set"],"default":"get"},
@@ -1692,6 +1707,100 @@ ActionResult act_app(Session& s, const Value& args) {
     return fail(ErrorCode::InvalidArgument, "unknown app mode '" + mode + "'");
 }
 
+// Resolves the pid a menu action applies to: an explicit one, or the frontmost
+// application, which is what someone means by "the File menu" almost always.
+Result<int> menu_target_pid(Session& s, const Value& args) {
+    if (args.contains("pid") && args["pid"].is_number()) {
+        return static_cast<int>(args["pid"].as_int());
+    }
+    auto win = s.windows();
+    if (!win) return win.error();
+    auto focused = win.value()->focused_window();
+    if (!focused) {
+        return err(ErrorCode::NotFound, "no focused window, so no frontmost application",
+                   "Pass pid explicitly; `app --mode list` shows what is running.");
+    }
+    return focused.value().pid;
+}
+
+ActionResult act_menu(Session& s, const Value& args) {
+    auto a11y = s.accessibility();
+    if (!a11y) return fail(a11y.error());
+
+    auto pid = menu_target_pid(s, args);
+    if (!pid) return fail(pid.error());
+
+    const std::string mode = args["mode"].as_string("list");
+
+    if (mode == "select") {
+        std::vector<std::string> path;
+        const Value& p = args["path"];
+        if (p.is_array()) {
+            for (const auto& part : p.as_array()) path.push_back(part.as_string());
+        } else if (p.is_string()) {
+            // "File > Save As" is what a person writes; split on > so both
+            // forms work without the model having to guess which is wanted.
+            std::string text = p.as_string(), item;
+            std::size_t start = 0;
+            while (start <= text.size()) {
+                const auto sep = text.find('>', start);
+                item =
+                    text.substr(start, sep == std::string::npos ? std::string::npos : sep - start);
+                const auto a = item.find_first_not_of(" \t");
+                const auto b = item.find_last_not_of(" \t");
+                if (a != std::string::npos) path.push_back(item.substr(a, b - a + 1));
+                if (sep == std::string::npos) break;
+                start = sep + 1;
+            }
+        }
+        if (path.empty()) {
+            return fail(err(ErrorCode::InvalidArgument,
+                            "select needs a path, e.g. [\"File\",\"Save\"] or \"File > Save\""));
+        }
+        if (auto st = a11y.value()->invoke_menu(pid.value(), path); !st) return fail(st.error());
+
+        std::string joined;
+        for (const auto& part : path) joined += (joined.empty() ? "" : " > ") + part;
+        Value v = Value::object();
+        v.set("pid", static_cast<long long>(pid.value()));
+        v.set("selected", joined);
+        return succeed("Selected " + joined, v);
+    }
+
+    const int depth = static_cast<int>(args["depth"].as_int(mode == "list" ? 1 : 3));
+    auto entries = a11y.value()->menu_bar(pid.value(), depth);
+    if (!entries) return fail(entries.error());
+
+    Value list = Value::array();
+    std::string text;
+    for (const auto& e : entries.value()) {
+        if (e.separator) continue;
+        Value item = Value::object();
+        Value path = Value::array();
+        for (const auto& part : e.path) path.push_back(part);
+        item.set("path", path);
+        item.set("title", e.title);
+        item.set("enabled", e.enabled);
+        if (!e.shortcut.empty()) item.set("shortcut", e.shortcut);
+        if (e.has_submenu) item.set("has_submenu", true);
+        list.push_back(item);
+
+        std::string line;
+        for (std::size_t i = 1; i < e.path.size(); ++i) line += "  ";
+        line += e.title;
+        if (!e.enabled) line += "  (disabled)";
+        if (!e.shortcut.empty()) line += "  [" + e.shortcut + "]";
+        if (e.has_submenu) line += "  >";
+        text += line + "\n";
+    }
+
+    Value v = Value::object();
+    v.set("pid", static_cast<long long>(pid.value()));
+    v.set("items", list);
+    if (text.empty()) text = "That application's menu bar is empty.\n";
+    return succeed(text, v);
+}
+
 ActionResult act_elements(Session& s, const Value& args) {
     auto a11y = s.accessibility();
     if (!a11y) return fail(a11y.error());
@@ -1970,6 +2079,7 @@ ActionResult run(Session& session, std::string_view name, const Value& args) {
         if (name == "windows") return act_windows(session, args);
         if (name == "app") return act_app(session, args);
         if (name == "elements") return act_elements(session, args);
+        if (name == "menu") return act_menu(session, args);
         if (name == "clipboard") return act_clipboard(session, args);
         if (name == "shell") return act_shell(session, args);
         if (name == "process") return act_process(session, args);
