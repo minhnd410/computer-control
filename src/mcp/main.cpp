@@ -178,6 +178,7 @@ int main(int argc, char** argv) {
                 opts.server_name = argv[++i];
             } else if (a == "--command" && i + 1 < argc) {
                 opts.command = argv[++i];
+                opts.command_explicit = true;
             } else if (a == "--client" && i + 1 < argc) {
                 // Comma-separated so one flag can name several.
                 std::string list = argv[++i], item;

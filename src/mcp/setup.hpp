@@ -58,6 +58,11 @@ AgentStatus agent_status();
 std::string ask_service(const std::string& tool);
 // Whether stdin and stdout are both a terminal, so a prompt can be answered.
 bool interactive_terminal();
+
+// Walks the user through each OS permission in turn, raising the prompt from
+// the service's own process and waiting until it is actually granted before
+// moving to the next. Returns true when everything ended up granted.
+bool guide_permissions(bool assume_yes);
 // Writes the plist, starts the job, and waits for the port to answer.
 Status install_agent(const std::string& command, int port, std::string* token_out);
 Status uninstall_agent();
@@ -80,7 +85,8 @@ struct SetupOptions {
     bool restart = false;  // reload the agent, after a permission change
     int port = 8765;
     std::string server_name = "computer-control";
-    std::string command;  // defaults to this executable's path
+    std::string command;            // defaults to this executable's path
+    bool command_explicit = false;  // --command was passed, so honour it
 };
 
 // Runs the flow. Returns a process exit code.

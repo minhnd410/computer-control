@@ -804,6 +804,135 @@ void print_permission_summary() {
 
 }  // namespace
 
+// Walks the user through one permission at a time, waiting for each.
+//
+// Asking for both at once produces two stacked dialogs and a person who has
+// no idea which one they just dismissed. Asking for one, watching until it is
+// actually granted, then asking for the next, is slower to script and far
+// easier to follow.
+//
+// The request has to originate in the service's process. A prompt raised from
+// this terminal asks on behalf of the terminal, which is the whole confusion
+// the shared service exists to remove - so every step here goes through the
+// service's own `permissions` tool.
+namespace {
+
+// Reads one permission's state out of the service's structured result.
+std::string service_permission_state(const std::string& name) {
+    const AgentStatus st = agent_status();
+    if (!st.installed || !st.running) return "unknown";
+
+    const std::string body = std::string(R"({"jsonrpc":"2.0","id":1,"method":"tools/call",)") +
+                             R"("params":{"name":"permissions","arguments":{},"_meta":{)" +
+                             R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
+                             R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
+    std::vector<std::string> args{
+        "-fsS", "-m", "8", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+    const std::string token = agent_token();
+    if (!token.empty()) {
+        args.push_back("-H");
+        args.push_back("Authorization: Bearer " + token);
+    }
+    args.push_back("-d");
+    args.push_back(body);
+
+    const auto r = devices::exec("curl", args, std::chrono::milliseconds{10000});
+    if (r.exit_code != 0) return "unknown";
+    json::ParseError pe;
+    const json::Value v = json::parse(r.out, &pe);
+    if (!pe.ok) return "unknown";
+    const json::Value& list = v["result"]["structuredContent"]["permissions"];
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        if (list[i]["permission"].as_string() == name) return list[i]["state"].as_string();
+    }
+    return "unknown";
+}
+
+// Tells the service to raise the prompt for one permission.
+void service_request(const std::string& name) {
+    const AgentStatus st = agent_status();
+    if (!st.installed || st.port == 0) return;
+    const std::string body = std::string(R"({"jsonrpc":"2.0","id":1,"method":"tools/call",)") +
+                             R"("params":{"name":"permissions","arguments":{"request":true,)" +
+                             R"("permission":")" + name + R"("},"_meta":{)" +
+                             R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
+                             R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
+    std::vector<std::string> args{
+        "-fsS", "-m", "20", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+    const std::string token = agent_token();
+    if (!token.empty()) {
+        args.push_back("-H");
+        args.push_back("Authorization: Bearer " + token);
+    }
+    args.push_back("-d");
+    args.push_back(body);
+    (void)devices::exec("curl", args, std::chrono::milliseconds{25000});
+}
+
+// Returns true once granted. Prints a live line while it waits.
+bool wait_for_permission(const std::string& name, const std::string& label, int seconds) {
+    const char* spin = "|/-\\";
+    for (int i = 0; i < seconds * 4; ++i) {
+        const std::string state = service_permission_state(name);
+        if (state == "granted") {
+            std::cout << "\r\x1b[2K  " << green(mark_ok()) << " " << label << "  " << dim("granted")
+                      << "\n"
+                      << std::flush;
+            return true;
+        }
+        if (color_enabled()) {
+            std::cout << "\r\x1b[2K  " << cyan(std::string(1, spin[i % 4])) << " " << label << "  "
+                      << dim("waiting for you to allow it...") << std::flush;
+        } else if (i == 0) {
+            std::cout << "  .. " << label << "  waiting for you to allow it...\n" << std::flush;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{250});
+    }
+    std::cout << "\r\x1b[2K  " << yellow(mark_bad()) << " " << label << "  "
+              << yellow("still not granted") << "\n"
+              << std::flush;
+    return false;
+}
+
+}  // namespace
+
+bool guide_permissions(bool assume_yes) {
+    struct Step {
+        const char* id;
+        const char* label;
+        Permission permission;
+    };
+    const Step steps[] = {
+        {"accessibility", "Accessibility", Permission::Accessibility},
+        {"screen_recording", "Screen Recording", Permission::ScreenRecording},
+    };
+
+    bool all = true;
+    for (const Step& step : steps) {
+        if (service_permission_state(step.id) == "granted") {
+            std::cout << "  " << green(mark_ok()) << " " << step.label << "  " << dim("granted")
+                      << "\n";
+            continue;
+        }
+
+        std::cout << "\n  " << bold(step.label) << "\n"
+                  << dim("    A dialog should appear. Choose Open System Settings, then switch\n"
+                         "    the toggle on. This waits until you have.")
+                  << "\n";
+        if (!assume_yes && interactive_terminal_impl()) {
+            std::cout << "    " << dim("press enter when ready") << std::flush;
+            std::string ignored;
+            std::getline(std::cin, ignored);
+            std::cout << "\x1b[1A\r\x1b[2K";
+        }
+
+        service_request(step.id);
+        (void)open_permission_settings(step.permission);
+        if (!wait_for_permission(step.id, step.label, 120)) all = false;
+    }
+    return all;
+}
+
 int run_setup(const SetupOptions& opts_in) {
     SetupOptions opts = opts_in;
     if (opts.command.empty()) opts.command = executable_path();
@@ -978,6 +1107,23 @@ int run_setup(const SetupOptions& opts_in) {
     if (shared) {
         const AgentStatus before = agent_status();
         heading("Service");
+
+        // An installed service keeps the binary it was installed with unless
+        // told otherwise. A permission is granted to one binary at one path,
+        // so quietly repointing the service - which running `setup` from a
+        // second copy would otherwise do - revokes every grant it had, and the
+        // only symptom is that everything stops working.
+        if (before.installed && !before.binary.empty() && before.binary != opts.command &&
+            !opts.command_explicit) {
+            std::cout << "  " << yellow("!") << " the service already runs a different binary\n"
+                      << "    " << dim("running  " + before.binary) << "\n"
+                      << "    " << dim("this one " + opts.command) << "\n"
+                      << dim("    Keeping the one that is running: permissions are granted per\n"
+                             "    binary, so switching would drop them. Pass --command to "
+                             "switch.")
+                      << "\n";
+            opts.command = before.binary;
+        }
         if (auto st = install_agent(opts.command, port, &token); !st) {
             std::cout << "  " << red(mark_bad()) << " " << st.error().message << "\n";
             if (!st.error().remedy.empty()) {
@@ -1036,36 +1182,34 @@ int run_setup(const SetupOptions& opts_in) {
     if (opts.permissions) {
         heading("Permissions");
         if (shared) {
-            // The agent is the process that needs the grant now, and it is a
-            // different process from this one - so this process's own state
-            // says nothing useful about it.
-            std::cout << dim("  The service is its own process, so the permission goes to it\n"
-                             "  rather than to any client.")
-                      << "\n\n  Enable " << bold("computer-control-mcp") << " under\n"
-                      << "    " << cyan("Privacy & Security \u203a Accessibility") << "\n"
-                      << "    " << cyan("Privacy & Security \u203a Screen & System Audio Recording")
-                      << "\n"
-                      << dim("  Add it with + if it is not listed yet.") << "\n\n";
-            if (opts.assume_yes || !interactive()) {
-                (void)open_permission_settings(Permission::Accessibility);
-            } else {
-                std::cout << "  Open that pane now? " << dim("[Y/n]") << " " << std::flush;
-                std::string answer;
-                std::getline(std::cin, answer);
-                if (answer.empty() || answer[0] == 'y' || answer[0] == 'Y') {
-                    (void)open_permission_settings(Permission::Accessibility);
-                }
+            // The service is the process that needs these, and it is not this
+            // one - so the prompts are raised there and this only watches.
+            const bool all = guide_permissions(opts.assume_yes);
+
+            // Backends are built when a session starts, so a grant that
+            // arrives afterwards does not reach one that is already running.
+            // Reloading here is what turns "granted" into "working", and it is
+            // the step people were being asked to remember.
+            std::cout << "\n";
+            std::string token_again;
+            if (auto st = install_agent(opts.command, port, &token_again); st) {
+                std::cout << "  " << green(mark_ok()) << " service reloaded"
+                          << dim("  (a grant is read when the process starts)") << "\n";
             }
-            std::cout << "\n  " << yellow("The grant is read at launch")
-                      << dim(", so restart the service afterwards:") << "\n    "
-                      << cyan("computer-control-mcp setup --restart") << "\n";
+
+            if (!all) {
+                std::cout << "\n  " << yellow("Something is still not granted.") << "\n"
+                          << dim("    computer-control-mcp --doctor   shows what the service "
+                                 "sees")
+                          << "\n";
+            }
 
             heading("Later");
             std::cout << "  " << cyan("setup --status") << dim("   is the service running?") << "\n"
                       << "  " << cyan("setup --stop") << dim("     remove it") << "\n"
                       << "  " << cyan("--doctor") << dim("         what this host can do")
                       << "\n\n";
-            return failures == 0 ? 0 : 1;
+            return failures == 0 && all ? 0 : 1;
         }
         print_permission_summary();
 
