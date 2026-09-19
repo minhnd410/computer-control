@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include <atomic>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <sstream>
 
@@ -128,7 +130,7 @@ public:
     }
 
     bool write(const std::string& msg) override {
-        respond(200, msg);
+        respond(msg.empty() ? 202 : 200, msg);
         return true;
     }
 
@@ -144,10 +146,75 @@ public:
     }
 
 private:
+    enum class ChunkedRequestState { Incomplete, Complete, Malformed };
+
+    static ChunkedRequestState decode_chunked_request(const std::string& request,
+                                                       std::size_t body_start,
+                                                       std::string& body) {
+        constexpr std::size_t kMaxBody = 32u * 1024 * 1024;
+        body.clear();
+        std::size_t cursor = body_start;
+
+        for (;;) {
+            const auto line_end = request.find("\r\n", cursor);
+            if (line_end == std::string::npos) return ChunkedRequestState::Incomplete;
+
+            const auto extension = request.find(';', cursor);
+            const std::size_t size_end =
+                extension != std::string::npos && extension < line_end ? extension : line_end;
+            if (size_end == cursor) return ChunkedRequestState::Malformed;
+
+            std::size_t chunk_size = 0;
+            for (std::size_t i = cursor; i < size_end; ++i) {
+                const unsigned char c = static_cast<unsigned char>(request[i]);
+                unsigned digit;
+                if (c >= '0' && c <= '9')
+                    digit = c - '0';
+                else if (c >= 'a' && c <= 'f')
+                    digit = c - 'a' + 10;
+                else if (c >= 'A' && c <= 'F')
+                    digit = c - 'A' + 10;
+                else
+                    return ChunkedRequestState::Malformed;
+
+                if (chunk_size > (std::numeric_limits<std::size_t>::max() - digit) / 16)
+                    return ChunkedRequestState::Malformed;
+                chunk_size = chunk_size * 16 + digit;
+            }
+
+            cursor = line_end + 2;
+            if (chunk_size == 0) {
+                // A zero-sized chunk is followed by an optional trailer block
+                // and a final blank line.
+                if (request.compare(cursor, 2, "\r\n") == 0) {
+                    return ChunkedRequestState::Complete;
+                }
+                return request.find("\r\n\r\n", cursor) == std::string::npos
+                           ? ChunkedRequestState::Incomplete
+                           : ChunkedRequestState::Complete;
+            }
+
+            if (chunk_size > kMaxBody || body.size() > kMaxBody - chunk_size) {
+                return ChunkedRequestState::Malformed;
+            }
+            if (cursor > request.size() || request.size() - cursor < chunk_size + 2) {
+                return ChunkedRequestState::Incomplete;
+            }
+
+            body.append(request, cursor, chunk_size);
+            cursor += chunk_size;
+            if (request.compare(cursor, 2, "\r\n") != 0) {
+                return ChunkedRequestState::Malformed;
+            }
+            cursor += 2;
+        }
+    }
+
     bool read_request(std::string& out) {
         char buf[8192];
         std::size_t header_end = std::string::npos;
         long long content_length = -1;
+        bool chunked = false;
 
         for (;;) {
 #if defined(_WIN32)
@@ -162,15 +229,50 @@ private:
                 header_end = out.find("\r\n\r\n");
                 if (header_end != std::string::npos) {
                     const std::string headers = out.substr(0, header_end);
-                    const auto pos = lower(headers).find("content-length:");
-                    if (pos != std::string::npos) {
-                        content_length = std::strtoll(headers.c_str() + pos + 15, nullptr, 10);
+                    const std::string lowered = lower(headers);
+                    const std::string transfer_encoding =
+                        lower(header_value(headers, lowered, "transfer-encoding"));
+                    std::size_t token_start = 0;
+                    while (token_start < transfer_encoding.size()) {
+                        const auto comma = transfer_encoding.find(',', token_start);
+                        const auto token_end = comma == std::string::npos
+                                                   ? transfer_encoding.size()
+                                                   : comma;
+                        std::string token =
+                            transfer_encoding.substr(token_start, token_end - token_start);
+                        const auto first = token.find_first_not_of(" \t");
+                        if (first != std::string::npos) {
+                            const auto last = token.find_last_not_of(" \t");
+                            if (token.substr(first, last - first + 1) == "chunked") {
+                                chunked = true;
+                                break;
+                            }
+                        }
+                        if (comma == std::string::npos) break;
+                        token_start = comma + 1;
+                    }
+
+                    if (!chunked) {
+                        const std::string length = header_value(headers, lowered, "content-length");
+                        if (!length.empty()) {
+                            content_length = std::strtoll(length.c_str(), nullptr, 10);
+                        }
                     }
                 }
             }
             if (header_end != std::string::npos) {
-                if (content_length < 0) return true;
-                if (out.size() >= header_end + 4 + static_cast<std::size_t>(content_length)) {
+                if (chunked) {
+                    std::string decoded;
+                    const auto state = decode_chunked_request(out, header_end + 4, decoded);
+                    if (state == ChunkedRequestState::Complete) {
+                        out.resize(header_end + 4);
+                        out += decoded;
+                        return true;
+                    }
+                    if (state == ChunkedRequestState::Malformed) return false;
+                } else if (content_length < 0) {
+                    return true;
+                } else if (out.size() >= header_end + 4 + static_cast<std::size_t>(content_length)) {
                     return true;
                 }
             }
@@ -349,8 +451,9 @@ private:
 
     void respond(int status, const std::string& body) {
         replied_ = true;
+        const char* reason = status == 200 ? "OK" : status == 202 ? "Accepted" : "Error";
         std::ostringstream os;
-        os << "HTTP/1.1 " << status << (status == 200 ? " OK" : " Error") << "\r\n"
+        os << "HTTP/1.1 " << status << " " << reason << "\r\n"
            << "Content-Type: application/json\r\n"
            << "MCP-Protocol-Version: " << kModernProtocol << "\r\n"
            << (status == 405 ? "Allow: POST\r\n" : "") << "Content-Length: " << body.size()

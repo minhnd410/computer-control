@@ -298,7 +298,7 @@ int Server::run() {
     std::string line;
     while (transport_->read(line)) {
         const std::string reply = handle_message(line);
-        if (!reply.empty()) {
+        if (!reply.empty() || cfg_.transport == "http") {
             if (!transport_->write(reply)) break;
         }
     }

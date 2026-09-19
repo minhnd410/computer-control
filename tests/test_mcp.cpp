@@ -431,6 +431,12 @@ TEST(mcp_tool_schemas_survive_a_strict_validator) {
         CHECK(schema.is_object());
         CHECK(schema["type"].as_string() == "object");
         check_schema_node(schema, name, "");
+        if (name == "device") {
+            const json::Value& points = schema["properties"]["points"];
+            CHECK_EQ(points["type"].as_string(), std::string("array"));
+            CHECK(points["items"].is_object());
+            CHECK_EQ(points["items"]["type"].as_string(), std::string("object"));
+        }
 
         // Every argument names a type. An untyped property passes a JSON
         // Schema linter and still tells a model nothing about the shape to

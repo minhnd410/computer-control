@@ -5,6 +5,28 @@
 #include "mcp/server.hpp"
 
 namespace cc::mcp {
+namespace {
+
+bool has_typed_schema(const json::Value& node) {
+    return node.is_object() &&
+           (node.contains("type") || node.contains("oneOf") || node.contains("anyOf") ||
+            node.contains("$ref"));
+}
+
+void ensure_array_items(json::Value& node) {
+    if (node.is_object()) {
+        if (node["type"].as_string() == "array" && !has_typed_schema(node["items"])) {
+            json::Value items = node["items"].is_object() ? node["items"] : json::Value::object();
+            items.set("type", "object");
+            node.set("items", items);
+        }
+        for (auto& entry : node.as_object()) ensure_array_items(entry.second);
+    } else if (node.is_array()) {
+        for (auto& child : node.as_array()) ensure_array_items(child);
+    }
+}
+
+}  // namespace
 
 const char* server_instructions() {
     return "computer-control drives this machine's desktop, and any iOS simulator, Android "
@@ -63,6 +85,7 @@ json::Value tool_definitions(const ServerConfig& cfg) {
             schema = json::Value::object();
             schema.set("type", "object");
         }
+        ensure_array_items(schema);
 
         json::Value tool = json::Value::object();
         tool.set("name", name);
