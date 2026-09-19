@@ -118,6 +118,44 @@ Options: `-DCC_BUILD_MCP=OFF` (library only), `-DCC_ENABLE_NATIVE=ON` (tune for
 this CPU; not for redistributable builds), `-DCC_USE_SYSTEM_ZLIB=OFF`,
 `-DCC_BUILD_APP_BUNDLE=OFF`.
 
+### Getting a Developer ID certificate
+
+Signing is what stops each release costing the user a fresh Accessibility row
+and a re-grant: an unsigned binary's TCC identity is its code hash, so every
+version is a new program, while a Developer ID identity is stable across them.
+
+The certificate has to be minted by you — it authenticates as your developer
+account and can sign software in your name. Two scripts remove everything
+around that:
+
+```bash
+# 1. A CSR, if you do not already have one
+mkdir -p ~/apple-signing && chmod 700 ~/apple-signing
+openssl genrsa -out ~/apple-signing/devid.key 2048
+chmod 600 ~/apple-signing/devid.key
+openssl req -new -key ~/apple-signing/devid.key -out ~/apple-signing/devid.csr \
+  -subj "/emailAddress=you@example.com/CN=Your Name/C=XX"
+
+# 2. An App Store Connect API key, from
+#    App Store Connect > Users and Access > Integrations > Keys.
+#    It needs the Admin role; a Developer-role key cannot create certificates.
+export ASC_KEY_ID=XXXXXXXXXX
+export ASC_ISSUER_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+export ASC_KEY=~/Downloads/AuthKey_XXXXXXXXXX.p8
+
+# 3. Mint the certificate over the API - no browser
+./packaging/macos/create-certificate.sh ~/apple-signing/devid.csr
+
+# 4. Turn it into the CI secrets
+./packaging/macos/prepare-signing.sh ~/apple-signing/devid.key \
+  ~/apple-signing/developerID_application.cer
+```
+
+A **paid** Apple Developer Program membership is required. A free account can
+only issue Apple Development certificates, which sign locally but cannot be
+notarised or distributed — `prepare-signing.sh` checks for that and says so
+rather than producing a `.p12` that fails on the runner.
+
 ### A signed macOS bundle
 
 Worth the trouble only if you are tired of re-granting Accessibility after
