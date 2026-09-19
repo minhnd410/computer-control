@@ -880,6 +880,31 @@ std::string service_permission_state(const std::string& name) {
     return "unknown";
 }
 
+// The path the service reports for itself, which is what TCC keys on.
+std::string service_executable() {
+    const AgentStatus st = agent_status();
+    if (!st.installed || !st.running) return {};
+    const std::string body = std::string(R"({"jsonrpc":"2.0","id":1,"method":"tools/call",)") +
+                             R"("params":{"name":"permissions","arguments":{},"_meta":{)" +
+                             R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
+                             R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
+    std::vector<std::string> args{
+        "-fsS", "-m", "8", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+    const std::string token = agent_token();
+    if (!token.empty()) {
+        args.push_back("-H");
+        args.push_back("Authorization: Bearer " + token);
+    }
+    args.push_back("-d");
+    args.push_back(body);
+    const auto r = devices::exec("curl", args, std::chrono::milliseconds{10000});
+    if (r.exit_code != 0) return {};
+    json::ParseError pe;
+    const json::Value v = json::parse(r.out, &pe);
+    if (!pe.ok) return {};
+    return v["result"]["structuredContent"]["executable"].as_string();
+}
+
 // Tells the service to raise the prompt for one permission.
 void service_request(const std::string& name) {
     const AgentStatus st = agent_status();
@@ -932,12 +957,27 @@ bool guide_permissions(bool assume_yes) {
     struct Step {
         const char* id;
         const char* label;
+        const char* pane;
         Permission permission;
     };
     const Step steps[] = {
-        {"accessibility", "Accessibility", Permission::Accessibility},
-        {"screen_recording", "Screen Recording", Permission::ScreenRecording},
+        {"accessibility", "Accessibility", "Accessibility", Permission::Accessibility},
+        {"screen_recording", "Screen Recording", "Screen & System Audio Recording",
+         Permission::ScreenRecording},
     };
+
+    // The path to add with + is the service's, not this process's. Printing
+    // the one you happen to be running is how someone grants the wrong binary
+    // and is left wondering why nothing changed.
+    // Ask the service what it thinks it is. The plist may name a symlink,
+    // which macOS resolves before TCC sees it - so the row in System Settings
+    // is the resolved path, and printing the symlink would send someone
+    // looking for an entry under a name that is not there.
+    std::string grantee = service_executable();
+    if (grantee.empty()) {
+        const AgentStatus agent = agent_status();
+        grantee = agent.binary.empty() ? executable_path() : agent.binary;
+    }
 
     bool all = true;
     for (const Step& step : steps) {
@@ -947,20 +987,29 @@ bool guide_permissions(bool assume_yes) {
             continue;
         }
 
-        std::cout << "\n  " << bold(step.label) << "\n"
-                  << dim("    A dialog should appear. Choose Open System Settings, then switch\n"
-                         "    the toggle on. This waits until you have.")
-                  << "\n";
-        if (!assume_yes && interactive_terminal_impl()) {
-            std::cout << "    " << dim("press enter when ready") << std::flush;
-            std::string ignored;
-            std::getline(std::cin, ignored);
-            std::cout << "\x1b[1A\r\x1b[2K";
-        }
-
+        // Ask first, then describe. The request is what registers the service
+        // in the list; describing it beforehand promised a dialog that had not
+        // been asked for yet.
+        //
+        // And do not promise a dialog at all. A launchd agent that is a plain
+        // executable rather than an app bundle usually gets no prompt - macOS
+        // adds a disabled row to the list instead - so the reliable
+        // instruction is "open the pane and switch it on", which works either
+        // way.
         service_request(step.id);
         (void)open_permission_settings(step.permission);
-        if (!wait_for_permission(step.id, step.label, 120)) all = false;
+
+        std::cout << "\n  " << bold(step.label) << "\n"
+                  << "    Switch on " << bold("computer-control-mcp") << " under\n"
+                  << "    " << cyan(std::string("Privacy & Security \u203a ") + step.pane) << "\n"
+                  << dim("    The pane should be open. If the entry is missing, add it with + :\n")
+                  << dim("      " + grantee) << "\n"
+                  << dim("    A dialog may also appear; either way works.") << "\n";
+        if (!assume_yes) {
+            std::cout << dim("    Ctrl-C to skip this.") << "\n";
+        }
+
+        if (!wait_for_permission(step.id, step.label, 180)) all = false;
     }
     return all;
 }
