@@ -10,6 +10,7 @@
 #include "cc/permissions.hpp"
 #include "mcp/protocol.hpp"
 #include "mcp/server.hpp"
+#include "mcp/setup.hpp"
 
 namespace {
 
@@ -42,6 +43,12 @@ SAFETY
   --allow-registry           Permit Windows registry writes (off by default).
   --max-capture-dimension N  Downscale captures so the longest side is N px.
                              Default 1600; 0 disables downscaling.
+
+SETUP
+  setup                      Register this server with the MCP clients on this
+                             machine and request the permissions it needs. Run
+                             `setup --help` for its options, `setup --list` to
+                             see every client and where its config lives.
 
 PROTOCOL
   Speaks MCP 2026-07-28, and falls back to 2025-06-18 for clients that open
@@ -104,6 +111,63 @@ const char* env_or_null(const char* name) {
 
 int main(int argc, char** argv) {
     ServerConfig cfg;
+
+    // `setup` is a subcommand rather than a flag because it is a different
+    // program: it edits other applications' configuration and talks to a
+    // person, where everything else here speaks JSON-RPC to a machine.
+    if (argc > 1 && std::string(argv[1]) == "setup") {
+        cc::mcp::SetupOptions opts;
+        for (int i = 2; i < argc; ++i) {
+            const std::string a = argv[i];
+            if (a == "--list") {
+                opts.list = true;
+            } else if (a == "--no-permissions") {
+                opts.permissions = false;
+            } else if (a == "--yes" || a == "-y") {
+                opts.assume_yes = true;
+            } else if (a == "--name" && i + 1 < argc) {
+                opts.server_name = argv[++i];
+            } else if (a == "--command" && i + 1 < argc) {
+                opts.command = argv[++i];
+            } else if (a == "--client" && i + 1 < argc) {
+                // Comma-separated so one flag can name several.
+                std::string list = argv[++i], item;
+                std::istringstream ss(list);
+                while (std::getline(ss, item, ',')) {
+                    if (!item.empty()) opts.clients.push_back(item);
+                }
+            } else if (a == "--help" || a == "-h") {
+                std::cout <<
+                    R"(computer-control-mcp setup - register this server with the MCP clients
+                            on this machine, then get the OS permissions it needs.
+
+USAGE
+  computer-control-mcp setup [options]
+
+OPTIONS
+  --list                 Show every client this can configure and where each
+                         one keeps its config, then exit.
+  --client a,b           Configure these clients without asking. Ids come from
+                         --list.
+  --no-permissions       Skip the permission step.
+  --yes, -y              Do not ask before requesting a missing permission.
+  --name NAME            Register under this server name. Default:
+                         computer-control
+  --command PATH         Register this command instead of the running binary.
+
+With no options it asks which of the detected clients to configure. Run it
+again at any time; it rewrites its own entry and leaves the rest of the file
+alone.
+)";
+                return 0;
+            } else {
+                std::cerr << "computer-control-mcp setup: unknown option '" << a
+                          << "'. Try setup --help\n";
+                return 2;
+            }
+        }
+        return cc::mcp::run_setup(opts);
+    }
 
     if (const char* t = env_or_null("CC_AUTH_TOKEN")) cfg.auth_token = t;
     if (const char* d = env_or_null("CC_MAX_CAPTURE_DIMENSION")) {

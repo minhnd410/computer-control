@@ -20,13 +20,14 @@ emulator or mirrored handset visible on screen. macOS, Windows and Linux.
 
 ```bash
 brew install minhnd410/tap/computer-control
-computer-control-mcp --request-permissions
+computer-control-mcp setup
 ```
 
 ### Windows — winget
 
 ```powershell
 winget install minhnd410.computer-control
+computer-control-mcp setup
 ```
 
 ### Any platform — download
@@ -42,44 +43,42 @@ Only if you want to change it, or you are on a platform with no archive:
 
 ---
 
-## Point your client at it
+## Setup
 
-<details open>
-<summary><b>Claude Code</b></summary>
+`computer-control-mcp setup` does the rest. It finds the MCP clients you
+already have, asks which should get the server, writes each one's config, and
+then requests the OS permissions it needs.
+
+```
+$ computer-control-mcp setup
+
+Found these MCP clients. Which should get computer-control?
+
+  1) Claude Code
+  2) Claude Desktop
+  3) VS Code / GitHub Copilot
+  4) Codex CLI
+
+Enter numbers separated by spaces, 'a' for all, or Enter to skip:
+```
+
+It only ever touches its own entry, so the servers already in those files are
+left alone — and it refuses to write at all to a config it cannot parse, rather
+than replacing your work with a fresh file. Run it again whenever you add a
+client.
+
+Non-interactively, or to change your mind later:
 
 ```bash
-claude mcp add computer-control computer-control-mcp
+computer-control-mcp setup --list                 # every client and its config path
+computer-control-mcp setup --client cursor,zed    # no prompts
+computer-control-mcp --doctor                     # permissions and capabilities
 ```
-</details>
 
-<details>
-<summary><b>Claude Desktop, Cursor, Zed</b></summary>
-
-```json
-{
-  "mcpServers": {
-    "computer-control": { "command": "computer-control-mcp" }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>VS Code / GitHub Copilot</b> — <code>mcp.json</code></summary>
-
-```json
-{
-  "servers": {
-    "computer-control": { "type": "stdio", "command": "computer-control-mcp" }
-  }
-}
-```
-</details>
-
-On **macOS you must grant two permissions** or every tool will appear to work
-and do nothing. Run `computer-control-mcp --request-permissions`, then
-`--doctor` to confirm. If something is still wrong, `--doctor` names the exact
-settings pane — see [permissions](docs/permissions.md).
+On **macOS the two permissions are not optional** — without them every tool
+appears to work and silently does nothing. `setup` asks for them; `--doctor`
+tells you what is still missing and names the exact settings pane. See
+[permissions](docs/permissions.md).
 
 Using **Claude Code inside WSL**? Install the *Windows* build and have WSL
 launch it. A Linux binary inside WSL cannot reach the Windows desktop:

@@ -130,14 +130,29 @@ every rebuild, which is why a real identity matters here. See
 ## After installing
 
 ```bash
-computer-control-mcp --request-permissions   # grant what it needs
-computer-control-mcp --doctor                # confirm, and see what this host can do
+computer-control-mcp setup
+```
+
+That is the whole of it. `setup` detects the MCP clients on the machine, asks
+which should get the server, writes each one's config, and then requests the OS
+permissions. It is a command rather than something the installer did because
+**neither Homebrew nor winget can prompt** — a formula's post-install runs with
+no terminal attached, and winget's portable installer has no hook at all.
+
+It edits only its own entry, and refuses to write to a config it cannot parse
+rather than replacing it. Safe to re-run.
+
+```bash
+computer-control-mcp setup --list              # every client, and where its config lives
+computer-control-mcp setup --client cursor     # no prompts
+computer-control-mcp setup --no-permissions    # config only
+computer-control-mcp --doctor                  # what this host can do
 computer-control-mcp --list-tools
 ```
 
-Then point your client at it — see the [README](../README.md#point-your-client-at-it)
-for Claude Code, Claude Desktop, Cursor, Zed and VS Code, or [MCP
-server](mcp.md) for transports and tool gating.
+Clients it knows: Claude Code, Claude Desktop, VS Code / GitHub Copilot,
+Cursor, Windsurf, Codex CLI and Zed. For anything else, [MCP server](mcp.md)
+has the config shape and the transport options.
 
 ## Not available yet
 

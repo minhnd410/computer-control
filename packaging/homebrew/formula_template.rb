@@ -37,21 +37,18 @@ class ComputerControl < Formula
   end
 
   def caveats
-    on_macos do
-      <<~TEXT
-        computer-control needs two macOS permissions:
-          Accessibility                    input and the accessibility tree
-          Screen & System Audio Recording  screenshots
+    <<~TEXT
+      Finish setting up by running:
 
-        Grant them, then check:
-          computer-control-mcp --request-permissions
-          computer-control-mcp --doctor
+        computer-control-mcp setup
 
-        A binary launched from a terminal inherits that terminal's grant and
-        never appears in System Settings on its own. If element queries come
-        back empty, --doctor explains why and what to add.
-      TEXT
-    end
+      It finds the MCP clients on this machine, asks which should get
+      computer-control, writes the config for the ones you pick, and then
+      requests the OS permissions it needs. Run it again any time.
+
+      Homebrew cannot prompt during install, which is why this is a separate
+      command rather than something that already happened.
+    TEXT
   end
 
   test do
