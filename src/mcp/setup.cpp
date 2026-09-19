@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include <chrono>
+#include <climits>
 #include <thread>
 
 #include "cc/permissions.hpp"
@@ -593,6 +594,33 @@ bool configure_client_bridge(const ClientTarget& t, const std::string& server_na
 
 namespace {
 
+// Homebrew installs to a versioned Cellar path and symlinks it into
+// <prefix>/bin. Recording the Cellar path is what strands the service on the
+// next upgrade: brew deletes that directory, and launchd is left pointing at
+// a binary that no longer exists. The symlink survives an upgrade and resolves
+// to whatever version is current, so prefer it when it names the same file.
+std::string prefer_stable_path(const std::string& exe) {
+#if defined(_WIN32)
+    return exe;
+#else
+    const auto cellar = exe.find("/Cellar/");
+    if (cellar == std::string::npos) return exe;
+    const auto slash = exe.find_last_of('/');
+    if (slash == std::string::npos) return exe;
+
+    const std::string candidate = exe.substr(0, cellar) + "/bin" + exe.substr(slash);
+
+    // Both sides have to be resolved before comparing. On macOS /tmp is itself
+    // a symlink to /private/tmp, so resolving only the candidate compares
+    // "/private/tmp/..." against "/tmp/..." and never matches.
+    char a[PATH_MAX] = {0};
+    char b[PATH_MAX] = {0};
+    if (::realpath(candidate.c_str(), a) == nullptr) return exe;
+    if (::realpath(exe.c_str(), b) == nullptr) return exe;
+    return std::string(a) == std::string(b) ? candidate : exe;
+#endif
+}
+
 // Colour, but only when it is going to a terminal.
 //
 // Escape codes in a redirected stream turn a log into line noise, and NO_COLOR
@@ -764,6 +792,10 @@ std::optional<std::vector<std::size_t>> pick_clients(
 bool interactive_terminal_impl();
 
 }  // namespace
+
+std::string stable_path_for_test(const std::string& exe) {
+    return prefer_stable_path(exe);
+}
 
 bool interactive_terminal() {
     return interactive_terminal_impl();
@@ -937,6 +969,7 @@ int run_setup(const SetupOptions& opts_in) {
     SetupOptions opts = opts_in;
     if (opts.command.empty()) opts.command = executable_path();
     if (opts.command.empty()) opts.command = "computer-control-mcp";
+    if (!opts.command_explicit) opts.command = prefer_stable_path(opts.command);
 
     const auto targets = client_targets();
 
@@ -1113,7 +1146,11 @@ int run_setup(const SetupOptions& opts_in) {
         // so quietly repointing the service - which running `setup` from a
         // second copy would otherwise do - revokes every grant it had, and the
         // only symptom is that everything stops working.
-        if (before.installed && !before.binary.empty() && before.binary != opts.command &&
+        // Only keep the running binary if it is still there. An upgrade
+        // deletes the old Cellar directory, and keeping a path that no longer
+        // exists strands the service - which is worse than re-granting.
+        const bool running_binary_exists = !before.binary.empty() && exists(before.binary);
+        if (before.installed && running_binary_exists && before.binary != opts.command &&
             !opts.command_explicit) {
             std::cout << "  " << yellow("!") << " the service already runs a different binary\n"
                       << "    " << dim("running  " + before.binary) << "\n"
@@ -1123,6 +1160,13 @@ int run_setup(const SetupOptions& opts_in) {
                              "switch.")
                       << "\n";
             opts.command = before.binary;
+        } else if (before.installed && !before.binary.empty() && !running_binary_exists) {
+            std::cout << "  " << yellow("!") << " the binary the service pointed at is gone\n"
+                      << "    " << dim(before.binary) << "\n"
+                      << dim("    An upgrade replaced it. Pointing the service at the current\n"
+                             "    one; macOS treats it as a new program, so it needs granting\n"
+                             "    again.")
+                      << "\n";
         }
         if (auto st = install_agent(opts.command, port, &token); !st) {
             std::cout << "  " << red(mark_bad()) << " " << st.error().message << "\n";

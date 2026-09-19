@@ -59,6 +59,10 @@ std::string ask_service(const std::string& tool);
 // Whether stdin and stdout are both a terminal, so a prompt can be answered.
 bool interactive_terminal();
 
+// Exposed for tests: maps a versioned install path to the stable symlink that
+// points at it, when one exists.
+std::string stable_path_for_test(const std::string& exe);
+
 // Walks the user through each OS permission in turn, raising the prompt from
 // the service's own process and waiting until it is actually granted before
 // moving to the next. Returns true when everything ended up granted.

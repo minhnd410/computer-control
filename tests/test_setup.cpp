@@ -14,6 +14,10 @@
 #include "mcp/setup.hpp"
 #include "test_framework.hpp"
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 using namespace cc;
 
 namespace {
@@ -303,4 +307,37 @@ TEST(setup_bridge_entry_launches_the_forwarder_without_the_token) {
     CHECK_EQ(e["args"][1].as_string(), std::string("http://127.0.0.1:8765/mcp"));
     CHECK(!e.contains("headers"));
     remove_file(path);
+}
+
+TEST(setup_prefers_the_stable_path_over_a_versioned_one) {
+    // A Homebrew Cellar path is deleted by the next upgrade. The plist has to
+    // record something that survives one, or the service is stranded with no
+    // symptom beyond "not answering".
+    //
+    // Exercised through a real symlink because the mapping is only correct
+    // when the candidate resolves to the same file; a string rewrite would
+    // happily produce a path to something else entirely.
+    const std::string root = temp_dir() + "/brewlike";
+    const std::string cellar = root + "/Cellar/computer-control/1.2.3/bin";
+    const std::string binroot = root + "/bin";
+    std::string ignore;
+    // configure_client creates parents, so borrow it to build the tree.
+    mcp::ClientTarget t = json_target(cellar + "/computer-control-mcp");
+    (void)mcp::configure_client(t, "x", "y", &ignore);
+    mcp::ClientTarget t2 = json_target(binroot + "/placeholder");
+    (void)mcp::configure_client(t2, "x", "y", &ignore);
+
+    const std::string real = cellar + "/computer-control-mcp";
+    const std::string link = binroot + "/computer-control-mcp";
+    std::remove(link.c_str());
+#if !defined(_WIN32)
+    CHECK(::symlink(real.c_str(), link.c_str()) == 0);
+    CHECK_EQ(mcp::stable_path_for_test(real), link);
+    // A path with no Cellar component is returned untouched.
+    CHECK_EQ(mcp::stable_path_for_test("/usr/local/bin/computer-control-mcp"),
+             std::string("/usr/local/bin/computer-control-mcp"));
+    std::remove(link.c_str());
+#endif
+    std::remove(real.c_str());
+    std::remove((binroot + "/placeholder").c_str());
 }
