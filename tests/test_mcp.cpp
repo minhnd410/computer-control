@@ -11,6 +11,7 @@
 
 #include <string>
 
+#include "actions/actions.hpp"
 #include "mcp/protocol.hpp"
 #include "mcp/server.hpp"
 #include "test_framework.hpp"
@@ -352,11 +353,21 @@ void check_schema_node(const json::Value& node, const std::string& tool, const s
         // GitHub Copilot rejects the whole tool with "tool parameters array
         // type must have items", so a single missing key takes the server
         // down for that client rather than degrading one argument.
-        if (node["type"].as_string() == "array" && !node.contains("items")) {
+        if (node["type"].as_string() == "array") {
+            // `items` must exist *and* name a type. GitHub Copilot rejects the
+            // whole tool otherwise - "tool parameters array type must have
+            // items" - because it cannot turn an untyped element into a
+            // function-calling parameter. An `items` carrying only a
+            // description looks fine to a JSON Schema linter and still fails
+            // there, which is how this survived a first fix.
+            const bool has_typed_items =
+                node.contains("items") && node["items"].is_object() &&
+                (node["items"].contains("type") || node["items"].contains("oneOf") ||
+                 node["items"].contains("anyOf") || node["items"].contains("$ref"));
             char note[256];
-            std::snprintf(note, sizeof(note), "%s: '%s' is type array with no 'items'",
+            std::snprintf(note, sizeof(note), "%s: '%s' is type array whose items declare no type",
                           tool.c_str(), path.c_str());
-            ::test::report(false, "array schema declares items", __FILE__, __LINE__, note);
+            ::test::report(has_typed_items, "array items declare a type", __FILE__, __LINE__, note);
         }
         for (const auto& [key, child] : node.as_object()) {
             check_schema_node(child, tool, path.empty() ? key : path + "." + key);
@@ -369,6 +380,38 @@ void check_schema_node(const json::Value& node, const std::string& tool, const s
 }
 
 }  // namespace
+
+TEST(mcp_every_builtin_schema_actually_parses) {
+    // tools.cpp substitutes a permissive {"type":"object"} when a built-in
+    // schema fails to parse, so a stray brace does not crash the server - it
+    // silently strips every argument description from that one tool instead.
+    // That is far harder to notice than a crash, and it is exactly how a
+    // broken `gesture` schema shipped, so it is checked here rather than
+    // trusted.
+    for (const auto& spec : actions::registry()) {
+        json::ParseError pe;
+        json::Value schema = json::parse(spec.schema_json, &pe);
+        char note[256];
+        std::snprintf(note, sizeof(note), "%s: schema_json does not parse: %s", spec.name,
+                      pe.message.c_str());
+        ::test::report(pe.ok, "built-in schema is valid JSON", __FILE__, __LINE__, note);
+        if (!pe.ok) continue;
+
+        std::snprintf(note, sizeof(note), "%s: schema root is not an object", spec.name);
+        ::test::report(schema.is_object() && schema["type"].as_string() == "object",
+                       "schema root is an object", __FILE__, __LINE__, note);
+
+        // A tool with arguments must describe them. An empty `properties` on a
+        // tool that takes arguments is the shape the fallback produces.
+        if (std::string(spec.name) != "cursor_position" &&
+            std::string(spec.name) != "release_all") {
+            std::snprintf(note, sizeof(note), "%s: schema has no properties - fallback shape?",
+                          spec.name);
+            ::test::report(schema.contains("properties"), "schema declares properties", __FILE__,
+                           __LINE__, note);
+        }
+    }
+}
 
 TEST(mcp_tool_schemas_survive_a_strict_validator) {
     mcp::ServerConfig cfg = test_config();
@@ -388,6 +431,20 @@ TEST(mcp_tool_schemas_survive_a_strict_validator) {
         CHECK(schema.is_object());
         CHECK(schema["type"].as_string() == "object");
         check_schema_node(schema, name, "");
+
+        // Every argument names a type. An untyped property passes a JSON
+        // Schema linter and still tells a model nothing about the shape to
+        // send, which shows up as wrong tool calls rather than as an error.
+        for (const auto& [key, prop] : schema["properties"].as_object()) {
+            const bool typed =
+                prop.is_object() &&
+                (prop.contains("type") || prop.contains("enum") || prop.contains("oneOf") ||
+                 prop.contains("anyOf") || prop.contains("$ref"));
+            char note[256];
+            std::snprintf(note, sizeof(note), "%s: argument '%s' declares no type", name.c_str(),
+                          key.c_str());
+            ::test::report(typed, "argument declares a type", __FILE__, __LINE__, note);
+        }
     }
 }
 

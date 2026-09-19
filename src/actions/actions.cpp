@@ -467,6 +467,42 @@ Result<GestureRequest> gesture_from(Session& s, const Value& args) {
 // Registry
 // ---------------------------------------------------------------------------
 
+// Argument shapes that recur across the registry. Raw string literals do not
+// expand macros, so these are ordinary literals joined by adjacent-literal
+// concatenation: R"(..."at":{)" CC_POINT R"(})". They are body-only, with no
+// outer braces, so each use can add its own description.
+//
+// Every one names a concrete type. An untyped property tells a model nothing
+// about the shape to send, and an untyped array element makes GitHub Copilot
+// reject the whole tool ("tool parameters array type must have items"). The
+// parsers still accept the [x,y] and "x,y@space" shorthands; the schema
+// advertises the object form because it is the only one that carries a
+// coordinate space, which is the thing most worth getting right.
+#define CC_SPACE                                                                    \
+    "\"space\":{\"type\":\"string\",\"enum\":[\"logical\",\"physical\",\"image\"]," \
+    "\"default\":\"logical\"}"
+
+#define CC_POINT                                                      \
+    "\"type\":\"object\",\"required\":[\"x\",\"y\"],\"properties\":{" \
+    "\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"}," CC_SPACE "}"
+
+#define CC_RECT                                                                   \
+    "\"type\":\"object\",\"required\":[\"x\",\"y\",\"w\",\"h\"],\"properties\":{" \
+    "\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},"                    \
+    "\"w\":{\"type\":\"number\"},\"h\":{\"type\":\"number\"}," CC_SPACE "}"
+
+#define CC_POINT_PRESSURE                                               \
+    "\"type\":\"object\",\"required\":[\"x\",\"y\"],\"properties\":{"   \
+    "\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"}," CC_SPACE \
+    ","                                                                 \
+    "\"pressure\":{\"type\":\"number\",\"minimum\":0,\"maximum\":1},"   \
+    "\"dwell_ms\":{\"type\":\"integer\",\"minimum\":0}}"
+
+#define CC_MODIFIERS                                                               \
+    "\"type\":\"array\",\"description\":\"Held for the duration of the action.\"," \
+    "\"items\":{\"type\":\"string\",\"enum\":[\"cmd\",\"ctrl\",\"alt\",\"shift\"," \
+    "\"option\",\"meta\",\"win\",\"super\"]}"
+
 const std::vector<ActionSpec>& registry() {
     static const std::vector<ActionSpec> specs = {
         {"permissions", "Permissions",
@@ -512,7 +548,7 @@ const std::vector<ActionSpec>& registry() {
          R"({"type":"object","properties":{
             "display":{"type":"integer","description":"Zero-based display index."},
             "window_id":{"type":"integer"},
-            "region":{"description":"[x,y,w,h] or {x,y,w,h,space}."},
+            "region":{)" CC_RECT R"(},
             "max_dimension":{"type":"integer","description":"Longest side in pixels; 0 = no limit."},
             "scale":{"type":"number"},
             "format":{"type":"string","enum":["png","jpeg"],"default":"png"},
@@ -539,7 +575,7 @@ const std::vector<ActionSpec>& registry() {
          "Re-capture a region of the screen at full resolution. Use it to read small text that "
          "is illegible in a downscaled screenshot. Read-only.",
          R"({"type":"object","required":["region"],"properties":{
-            "region":{"description":"[x,y,w,h] or {x,y,w,h,space}."},
+            "region":{)" CC_RECT R"(},
             "format":{"type":"string","enum":["png","jpeg"]}}})",
          true, false},
 
@@ -550,7 +586,7 @@ const std::vector<ActionSpec>& registry() {
          "Move the pointer. Use profile=\"human\" for motion that passes hover and drag "
          "heuristics, or \"instant\" when only the final position matters.",
          R"({"type":"object","properties":{
-            "at":{"description":"Target [x,y] or {x,y,space}."},
+            "at":{)" CC_POINT R"(},
             "label":{"type":"integer","description":"Element label from the last snapshot."},
             "profile":{"type":"string","enum":["instant","linear","ease","human"],"default":"ease"},
             "duration_ms":{"type":"integer","default":180},
@@ -562,11 +598,11 @@ const std::vector<ActionSpec>& registry() {
          "double click and 3 a triple click, emitted as one stream with the OS click-count field "
          "set so applications see a real multi-click.",
          R"({"type":"object","properties":{
-            "at":{"description":"[x,y] or {x,y,space}."},
+            "at":{)" CC_POINT R"(},
             "label":{"type":"integer"},
             "button":{"type":"string","enum":["left","right","middle","back","forward"],"default":"left"},
             "count":{"type":"integer","minimum":0,"maximum":3,"default":1},
-            "modifiers":{"description":"\"cmd+shift\" or [\"cmd\",\"shift\"]."},
+            "modifiers":{)" CC_MODIFIERS R"(},
             "press_ms":{"type":"integer","default":12}}})",
          false, true},
 
@@ -574,14 +610,14 @@ const std::vector<ActionSpec>& registry() {
          "Scroll at a point. Set pixel_units for smooth trackpad-style scrolling, and phased to "
          "emit begin/change/end markers so momentum-aware applications treat it as one gesture.",
          R"({"type":"object","properties":{
-            "at":{"description":"[x,y]; defaults to the current pointer position."},
+            "at":{"description":"Defaults to the current pointer position.",)" CC_POINT R"(},
             "label":{"type":"integer"},
             "direction":{"type":"string","enum":["up","down","left","right"],"default":"down"},
             "clicks":{"type":"integer","default":3},
             "pixel_units":{"type":"boolean","default":false},
             "pixels_per_click":{"type":"integer","default":40},
             "phased":{"type":"boolean","default":false},
-            "modifiers":{}}})",
+            "modifiers":{)" CC_MODIFIERS R"(}}})",
          false, false},
 
         {"drag", "Drag",
@@ -589,12 +625,12 @@ const std::vector<ActionSpec>& registry() {
          "a dwell after the press and a settle before the release. That timing is what makes "
          "drag-and-drop actually register in most toolkits.",
          R"({"type":"object","required":["from","to"],"properties":{
-            "from":{"description":"[x,y] or {x,y,space}."},
-            "to":{"description":"[x,y] or {x,y,space}."},
+            "from":{)" CC_POINT R"(},
+            "to":{)" CC_POINT R"(},
             "button":{"type":"string","default":"left"},
             "duration_ms":{"type":"integer","default":450},
             "profile":{"type":"string","enum":["instant","linear","ease","human"]},
-            "modifiers":{},
+            "modifiers":{)" CC_MODIFIERS R"(},
             "settle_ms":{"type":"integer","default":40}}})",
          false, true},
 
@@ -603,13 +639,13 @@ const std::vector<ActionSpec>& registry() {
          "selections, gesture passwords. Set smooth to spline through the points, and give each "
          "point a pressure for pen-capable backends.",
          R"({"type":"object","required":["points"],"properties":{
-            "points":{"type":"array","items":{"description":"[x,y] or {x,y,pressure,dwell_ms}"}},
+            "points":{"type":"array","minItems":2,"items":{)" CC_POINT_PRESSURE R"(}},
             "button":{"type":"string","default":"left"},
             "smooth":{"type":"boolean","default":false},
             "tension":{"type":"number","default":0.5},
             "duration_ms":{"type":"integer","default":450},
             "pen":{"type":"boolean","default":false},
-            "modifiers":{}}})",
+            "modifiers":{)" CC_MODIFIERS R"(}}})",
          false, true},
 
         {"gesture", "Gesture",
@@ -619,7 +655,8 @@ const std::vector<ActionSpec>& registry() {
          "or set require_native to refuse emulation.",
          R"({"type":"object","required":["kind"],"properties":{
             "kind":{"type":"string","enum":["tap","swipe","pan","pinch","rotate","smart_zoom","force_press","edge_swipe","long_press"]},
-            "at":{"description":"Gesture centre; defaults to the pointer position."},
+            "at":{"description":"Gesture centre; defaults to the pointer position.",)" CC_POINT
+         R"(},
             "fingers":{"type":"integer","minimum":1,"maximum":5,"description":"Defaults to 1 for tap/long_press/force_press/edge_swipe, 2 otherwise."},
             "direction":{"type":"string","enum":["up","down","left","right"]},
             "distance":{"type":"number","default":200},
@@ -629,9 +666,9 @@ const std::vector<ActionSpec>& registry() {
             "duration_ms":{"type":"integer","default":300},
             "hold_ms":{"type":"integer","default":0},
             "path":{"type":"array","description":"Pan only.",
-                    "items":{"description":"[x,y] or {x,y}"}},
+                    "items":{)" CC_POINT R"(}},
             "require_native":{"type":"boolean","default":false},
-            "modifiers":{}}})",
+            "modifiers":{)" CC_MODIFIERS R"(}}})",
          false, true},
 
         {"key", "Key",
@@ -664,7 +701,7 @@ const std::vector<ActionSpec>& registry() {
          "active keyboard layout.",
          R"({"type":"object","required":["text"],"properties":{
             "text":{"type":"string"},
-            "at":{"description":"Click here first."},
+            "at":{"description":"Click here first.",)" CC_POINT R"(},
             "label":{"type":"integer","description":"Click this element first."},
             "clear":{"type":"boolean","default":false,"description":"Select-all and delete first."},
             "enter":{"type":"boolean","default":false,"description":"Press Return afterwards."},
@@ -692,7 +729,7 @@ const std::vector<ActionSpec>& registry() {
             "mode":{"type":"string","enum":["list","activate","bounds","state","close","focused"],"default":"list"},
             "window_id":{"type":"integer"},
             "title":{"type":"string","description":"Fuzzy-matched alternative to window_id."},
-            "bounds":{"description":"[x,y,w,h] for mode=bounds."},
+            "bounds":{"description":"Required for mode=bounds.",)" CC_RECT R"(},
             "state":{"type":"string","enum":["normal","minimized","maximized","fullscreen","hidden"]},
             "include_offscreen":{"type":"boolean","default":false}}})",
          false, true},
@@ -714,7 +751,7 @@ const std::vector<ActionSpec>& registry() {
          "under a point, or the focused element.",
          R"({"type":"object","properties":{
             "mode":{"type":"string","enum":["tree","at","focused"],"default":"tree"},
-            "at":{"description":"Required for mode=at."},
+            "at":{"description":"Required for mode=at.",)" CC_POINT R"(},
             "pid":{"type":"integer"},
             "interactive_only":{"type":"boolean","default":true},
             "max_nodes":{"type":"integer"},
@@ -774,9 +811,10 @@ const std::vector<ActionSpec>& registry() {
             "mode":{"type":"string","enum":["list","info","boot","shutdown","tap","swipe","stroke","gesture","type","button","screenshot","shell","install","launch","terminate","open_url","tree"],"default":"list"},
             "device":{"type":"string","description":"UDID, adb serial, or a fuzzy name."},
             "transport":{"type":"string","enum":["auto","bridge","onscreen"],"default":"auto"},
-            "at":{"description":"Device-space point for tap."},
-            "from":{},"to":{},
-            "points":{"type":"array","items":{"description":"[x,y] in device points"}},
+            "at":{"description":"Device-space point for tap.",)" CC_POINT R"(},
+            "from":{)" CC_POINT R"(},"to":{)" CC_POINT R"(},
+            "points":{"type":"array","description":"Device points, for stroke and gesture modes.",
+                      "items":{"type":"object","required":["x","y"],"properties":{"x":{"type":"number"},"y":{"type":"number"}}}},
             "text":{"type":"string"},
             "button":{"type":"string","description":"home, back, power, enter, volumeup, ..."},
             "duration_ms":{"type":"integer"},
