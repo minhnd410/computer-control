@@ -8,9 +8,8 @@ namespace cc::mcp {
 namespace {
 
 bool has_typed_schema(const json::Value& node) {
-    return node.is_object() &&
-           (node.contains("type") || node.contains("oneOf") || node.contains("anyOf") ||
-            node.contains("$ref"));
+    return node.is_object() && (node.contains("type") || node.contains("oneOf") ||
+                                node.contains("anyOf") || node.contains("$ref"));
 }
 
 void ensure_array_items(json::Value& node) {

@@ -149,8 +149,7 @@ private:
     enum class ChunkedRequestState { Incomplete, Complete, Malformed };
 
     static ChunkedRequestState decode_chunked_request(const std::string& request,
-                                                       std::size_t body_start,
-                                                       std::string& body) {
+                                                      std::size_t body_start, std::string& body) {
         constexpr std::size_t kMaxBody = 32u * 1024 * 1024;
         body.clear();
         std::size_t cursor = body_start;
@@ -235,9 +234,8 @@ private:
                     std::size_t token_start = 0;
                     while (token_start < transfer_encoding.size()) {
                         const auto comma = transfer_encoding.find(',', token_start);
-                        const auto token_end = comma == std::string::npos
-                                                   ? transfer_encoding.size()
-                                                   : comma;
+                        const auto token_end =
+                            comma == std::string::npos ? transfer_encoding.size() : comma;
                         std::string token =
                             transfer_encoding.substr(token_start, token_end - token_start);
                         const auto first = token.find_first_not_of(" \t");
@@ -272,7 +270,8 @@ private:
                     if (state == ChunkedRequestState::Malformed) return false;
                 } else if (content_length < 0) {
                     return true;
-                } else if (out.size() >= header_end + 4 + static_cast<std::size_t>(content_length)) {
+                } else if (out.size() >=
+                           header_end + 4 + static_cast<std::size_t>(content_length)) {
                     return true;
                 }
             }
