@@ -282,3 +282,25 @@ TEST(setup_writes_codex_http_as_toml_with_an_env_var_token) {
     CHECK(text.find("model = \"o3\"") != std::string::npos);
     remove_file(path);
 }
+
+TEST(setup_bridge_entry_launches_the_forwarder_without_the_token) {
+    // The bridge reads the token from the file the service wrote. Copying the
+    // secret into every client's config would spread it for no benefit.
+    const std::string path = write_temp("bridge.json", "");
+    mcp::ClientTarget t = json_target(path);
+    t.supports_http = false;
+
+    std::string error;
+    CHECK(mcp::configure_client_bridge(t, "computer-control", "/usr/local/bin/ccm",
+                                       "http://127.0.0.1:8765/mcp", &error));
+
+    json::ParseError pe;
+    json::Value v = json::parse(slurp(path), &pe);
+    CHECK(pe.ok);
+    const json::Value& e = v["mcpServers"]["computer-control"];
+    CHECK_EQ(e["command"].as_string(), std::string("/usr/local/bin/ccm"));
+    CHECK_EQ(e["args"][0].as_string(), std::string("bridge"));
+    CHECK_EQ(e["args"][1].as_string(), std::string("http://127.0.0.1:8765/mcp"));
+    CHECK(!e.contains("headers"));
+    remove_file(path);
+}

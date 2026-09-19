@@ -513,6 +513,52 @@ bool configure_client_http(const ClientTarget& t, const std::string& server_name
     return write_file(t.config, root.dump(2) + "\n", error);
 }
 
+bool configure_client_bridge(const ClientTarget& t, const std::string& server_name,
+                             const std::string& command, const std::string& url,
+                             std::string* error) {
+    if (t.toml) {
+        std::string text = read_file(t.config);
+        const std::string header = "[" + t.container + "." + server_name + "]";
+        if (text.find(header) != std::string::npos) return true;
+        if (!text.empty() && text.back() != '\n') text += "\n";
+        if (!text.empty()) text += "\n";
+        text += header + "\n";
+        text += "command = \"" + command + "\"\n";
+        text += "args = [\"bridge\", \"" + url + "\"]\n";
+        return write_file(t.config, text, error);
+    }
+
+    json::Value root = json::Value::object();
+    const std::string existing = read_file(t.config);
+    if (!existing.empty()) {
+        json::ParseError pe;
+        json::Value parsed = json::parse(existing, &pe);
+        if (!pe.ok) {
+            if (error) *error = "existing config is not valid JSON (" + pe.message + ")";
+            return false;
+        }
+        if (parsed.is_object()) root = parsed;
+    }
+
+    json::Value args = json::Value::array();
+    args.push_back("bridge");
+    args.push_back(url);
+
+    json::Value entry = json::Value::object();
+    if (t.needs_type) entry.set("type", "stdio");
+    entry.set("command", command);
+    entry.set("args", args);
+    // No token here on purpose: the bridge reads it from the file the service
+    // wrote, so the secret does not get copied into every client's config.
+
+    json::Value servers = root.contains(t.container) && root[t.container].is_object()
+                              ? root[t.container]
+                              : json::Value::object();
+    servers.set(server_name, entry);
+    root.set(t.container, servers);
+    return write_file(t.config, root.dump(2) + "\n", error);
+}
+
 namespace {
 
 bool interactive() {
@@ -656,72 +702,60 @@ int run_setup(const SetupOptions& opts_in) {
         }
     }
 
-    // Decide between one shared service and a copy per client.
+    // One shared service, always - there is no per-client mode any more.
     //
-    // This is not a performance question. On macOS a permission belongs to the
-    // process that launched the server, so a stdio copy under Claude Desktop
-    // uses Claude Desktop's grant and a copy under VS Code uses VS Code's -
-    // each needing its own, usually with no prompt to guide it. One launchd
-    // job is its own responsible process: it appears in System Settings under
-    // its own name and one grant covers every client.
-    bool shared = (opts.mode == SetupOptions::Mode::Shared);
-    const int http_capable = static_cast<int>(std::count_if(
-        chosen.begin(), chosen.end(), [](const ClientTarget* t) { return t->supports_http; }));
-
-    if (opts.mode == SetupOptions::Mode::Ask && http_capable > 0) {
+    // On macOS a permission belongs to the process that launched the server,
+    // so a copy spawned by each client needs a grant per client, usually with
+    // no prompt to guide it. A launchd job is its own responsible process: one
+    // grant, every client. Clients that speak HTTP connect directly; the rest
+    // launch `bridge`, which forwards and needs no permission of its own. That
+    // removed the last reason to keep two modes.
+    //
+    // Elsewhere there is no launchd and a stdio child needs no grant at all,
+    // so the service would be machinery bought for nothing and clients keep
+    // launching the server directly.
 #if defined(__APPLE__)
-        if (interactive()) {
-            std::cout << "How should these connect?\n\n"
-                      << "  1) One shared background service  (recommended)\n"
-                      << "       Started by launchd, so it holds its own Accessibility grant.\n"
-                      << "       Grant the permission once and every client works.\n"
-                      << "  2) A separate copy per client\n"
-                      << "       Nothing runs in the background, but each client needs\n"
-                      << "       Accessibility granted to itself, and macOS often will not\n"
-                      << "       prompt for it.\n\n"
-                      << "Choose [1]: " << std::flush;
-            std::string answer;
-            std::getline(std::cin, answer);
-            shared = answer.empty() || answer[0] == '1';
-            std::cout << "\n";
-        } else {
-            shared = false;
-        }
+    const bool shared = true;
 #else
-        // Elsewhere a stdio child needs no grant at all, so the background
-        // service would be complexity bought for nothing.
-        shared = false;
+    const bool shared = false;
 #endif
-    }
 
     std::string token;
-    int port = opts.port;
+    const int port = opts.port;
+    const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/mcp";
+
     if (shared) {
-        std::cout << "Starting the shared service...\n";
+        const AgentStatus before = agent_status();
+        std::cout << (before.running ? "Shared service already running.\n"
+                                     : "Starting the shared service...\n");
         if (auto st = install_agent(opts.command, port, &token); !st) {
             std::cout << "  " << st.error().message << "\n";
             if (!st.error().remedy.empty()) std::cout << "  " << st.error().remedy << "\n";
-            std::cout << "\n  Falling back to a copy per client.\n\n";
-            shared = false;
-        } else {
-            std::cout << "  listening on 127.0.0.1:" << port << ", starts again at login\n\n";
+            return 1;
         }
+        std::cout << "  listening on 127.0.0.1:" << port << ", starts again at login\n\n";
     }
 
     int failures = 0;
-    std::vector<const ClientTarget*> stdio_clients;
+    bool any_bridged = false, any_codex = false;
     for (const auto* t : chosen) {
         std::string error;
-        const bool use_http = shared && t->supports_http;
-        const bool done =
-            use_http ? configure_client_http(*t, opts.server_name,
-                                             "http://127.0.0.1:" + std::to_string(port) + "/mcp",
-                                             token, &error)
-                     : configure_client(*t, opts.server_name, opts.command, &error);
+        bool done = false;
+        const char* how = "";
+        if (!shared) {
+            done = configure_client(*t, opts.server_name, opts.command, &error);
+        } else if (t->supports_http) {
+            done = configure_client_http(*t, opts.server_name, url, token, &error);
+            how = "  (shared service)";
+            if (t->toml) any_codex = true;
+        } else {
+            done = configure_client_bridge(*t, opts.server_name, opts.command, url, &error);
+            how = "  (shared service, via bridge)";
+            any_bridged = true;
+        }
+
         if (done) {
-            std::cout << "  added to " << t->name << (use_http ? "  (shared service)" : "") << "  ("
-                      << t->config << ")\n";
-            if (!use_http) stdio_clients.push_back(t);
+            std::cout << "  added to " << t->name << how << "  (" << t->config << ")\n";
             if (!t->note.empty()) std::cout << "      " << t->note << "\n";
         } else {
             ++failures;
@@ -730,13 +764,15 @@ int run_setup(const SetupOptions& opts_in) {
     }
     if (!chosen.empty()) std::cout << "\n";
 
-    // Anything still on stdio needs its own grant, and saying which is the
-    // difference between a working setup and an afternoon in System Settings.
-    if (shared && !stdio_clients.empty()) {
-        std::cout << "These cannot use the shared service and will each need Accessibility\n"
-                  << "granted to themselves:\n";
-        for (const auto* t : stdio_clients) std::cout << "  - " << t->name << "\n";
-        std::cout << "\n";
+    if (any_bridged) {
+        std::cout << "Clients that can only launch a command run `bridge`, which forwards to\n"
+                  << "the service. The bridge holds no permissions itself, so the grant below\n"
+                  << "still covers them.\n\n";
+    }
+    if (any_codex) {
+        std::cout << "Codex reads its token from the environment rather than its config, so\n"
+                  << "add this to your shell profile:\n"
+                  << "  export CC_AUTH_TOKEN=$(cat ~/.config/computer-control/token)\n\n";
     }
 
     if (opts.permissions) {

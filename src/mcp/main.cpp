@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -8,6 +9,7 @@
 
 #include "actions/actions.hpp"
 #include "cc/permissions.hpp"
+#include "mcp/bridge.hpp"
 #include "mcp/protocol.hpp"
 #include "mcp/server.hpp"
 #include "mcp/setup.hpp"
@@ -112,6 +114,41 @@ const char* env_or_null(const char* name) {
 int main(int argc, char** argv) {
     ServerConfig cfg;
 
+    // `bridge` exists for clients that can only launch a local command. It
+    // forwards to the shared service and touches no OS API itself, so the
+    // Accessibility grant stays with the service rather than being needed by
+    // whichever client happened to spawn this.
+    if (argc > 1 && std::string(argv[1]) == "bridge") {
+        std::string url, token = env_or_null("CC_AUTH_TOKEN") ? env_or_null("CC_AUTH_TOKEN") : "";
+        for (int i = 2; i < argc; ++i) {
+            const std::string a = argv[i];
+            if (a == "--token" && i + 1 < argc) {
+                token = argv[++i];
+            } else if (a == "--help" || a == "-h") {
+                std::cout << "computer-control-mcp bridge <url> [--token TOKEN]\n\n"
+                             "Forwards stdio JSON-RPC to the shared service. Clients that can "
+                             "only\nlaunch a command use this to reach it; the token is read "
+                             "from\nCC_AUTH_TOKEN when --token is absent.\n";
+                return 0;
+            } else if (!a.empty() && a[0] != '-') {
+                url = a;
+            }
+        }
+        if (url.empty()) {
+            std::cerr << "computer-control-mcp bridge: needs a url\n";
+            return 2;
+        }
+        if (token.empty()) {
+            // The service requires a token, so failing here with the reason
+            // beats a stream of 401s the client reports as "server broken".
+            const std::string path = std::string(std::getenv("HOME") ? std::getenv("HOME") : "") +
+                                     "/.config/computer-control/token";
+            std::ifstream in(path);
+            if (in) std::getline(in, token);
+        }
+        return cc::mcp::run_bridge(url, token);
+    }
+
     // `setup` is a subcommand rather than a flag because it is a different
     // program: it edits other applications' configuration and talks to a
     // person, where everything else here speaks JSON-RPC to a machine.
@@ -121,10 +158,6 @@ int main(int argc, char** argv) {
             const std::string a = argv[i];
             if (a == "--list") {
                 opts.list = true;
-            } else if (a == "--shared") {
-                opts.mode = cc::mcp::SetupOptions::Mode::Shared;
-            } else if (a == "--per-client") {
-                opts.mode = cc::mcp::SetupOptions::Mode::Stdio;
             } else if (a == "--status") {
                 opts.status = true;
             } else if (a == "--stop") {
@@ -159,10 +192,6 @@ USAGE
 OPTIONS
   --list                 Show every client this can configure and where each
                          one keeps its config, then exit.
-  --shared               Run one background service that every client shares,
-                         without asking. macOS only.
-  --per-client           Give each client its own copy over stdio, without
-                         asking.
   --status               Report on the shared service and exit.
   --restart              Reload the shared service, after granting it a
                          permission.

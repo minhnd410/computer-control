@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(computer_control
-        VERSION 0.4.0
+        VERSION 0.5.0
         DESCRIPTION "Cross-platform desktop and mobile-simulator automation core"
         LANGUAGES C CXX)
 
@@ -259,7 +259,8 @@ if(CC_BUILD_MCP)
     src/mcp/tools.cpp
     src/mcp/transport.cpp
     src/mcp/protocol.cpp
-    src/mcp/setup.cpp)
+    src/mcp/setup.cpp
+    src/mcp/bridge.cpp)
   target_link_libraries(cc_mcp PRIVATE cc_static)
   set_target_properties(cc_mcp PROPERTIES OUTPUT_NAME computer-control-mcp)
 endif()
@@ -285,7 +286,8 @@ if(CC_BUILD_TESTS)
     src/mcp/server.cpp
     src/mcp/tools.cpp
     src/mcp/transport.cpp
-    src/mcp/setup.cpp)
+    src/mcp/setup.cpp
+    src/mcp/bridge.cpp)
   target_include_directories(cc_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
   # test_docs.cpp checks documented counts against the registry, which means
   # reading the repository from a build tree that can be anywhere.

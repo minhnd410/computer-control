@@ -69,7 +69,17 @@ computer-control-mcp setup --restart    # after granting a permission
 computer-control-mcp setup --stop       # remove it
 ```
 
-The trade-off is real and worth stating: a background process that can drive your desktop is running whether or not a client is attached. It listens on 127.0.0.1 only, requires a bearer token kept at `~/.config/computer-control/token` (mode 0600) and passed to the job through its environment rather than its argument list, and refuses cross-origin requests. Claude Desktop and Codex cannot be pointed at an HTTP endpoint from their config, so they stay on stdio and still need their own grant; `setup` says which ones those are.
+Every client reaches it. Those that speak HTTP — Claude Code, VS Code, Cursor, Codex — connect directly. Those that can only launch a command, such as Claude Desktop, launch `computer-control-mcp bridge <url>`, which forwards JSON-RPC to the service and touches no OS API itself. **The bridge holds no permissions**, so the grant stays with the service and still covers those clients. There is no per-client mode on macOS any more, because there is no longer a case it serves better.
+
+The trade-off is real and worth stating: a background process that can drive your desktop is running whether or not a client is attached. It listens on 127.0.0.1 only, requires a bearer token kept at `~/.config/computer-control/token` (mode 0600) and passed to the job through its environment rather than its argument list, and refuses cross-origin requests.
+
+Codex is the one client that reads its token from the environment rather than its config file, which keeps the secret out of the config but means you have to export it:
+
+```bash
+export CC_AUTH_TOKEN=$(cat ~/.config/computer-control/token)
+```
+
+**On Windows and Linux none of this applies.** There is no launchd, and a stdio child needs no grant in the first place, so clients launch the server directly.
 
 `CGDisplayCreateImage` and `CGWindowListCreateImage` are **removed**, not merely deprecated, in the macOS 15 SDK. Capture uses ScreenCaptureKit, which needs macOS 12.3+.
 

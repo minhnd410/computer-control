@@ -69,10 +69,6 @@ struct SetupOptions {
     bool list = false;
     bool permissions = true;
     bool assume_yes = false;
-    // Tri-state: unset means ask when it matters, which is when more than one
-    // client is being configured.
-    enum class Mode { Ask, Shared, Stdio };
-    Mode mode = Mode::Ask;
     bool stop = false;     // tear the agent down and exit
     bool status = false;   // report on the agent and exit
     bool restart = false;  // reload the agent, after a permission change
@@ -91,5 +87,12 @@ bool configure_client(const ClientTarget& t, const std::string& server_name,
 // Points a client at the shared service instead of spawning its own.
 bool configure_client_http(const ClientTarget& t, const std::string& server_name,
                            const std::string& url, const std::string& token, std::string* error);
+
+// For a client that can only launch a command: registers `bridge <url>`, which
+// forwards to the service. The bridge needs no permission of its own, so the
+// grant still lives with the service.
+bool configure_client_bridge(const ClientTarget& t, const std::string& server_name,
+                             const std::string& command, const std::string& url,
+                             std::string* error);
 
 }  // namespace cc::mcp
