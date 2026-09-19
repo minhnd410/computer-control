@@ -533,13 +533,13 @@ const std::vector<ActionSpec>& registry() {
          "Report what this host can do: displays and their DPI scale, which backends came up, "
          "which permissions are missing, gesture fidelity per gesture type, and which mobile "
          "device tooling is installed. Call this first on an unfamiliar machine.",
-         R"({"type":"object","properties":{}})", true, false},
+         R"({"type":"object","properties":{},"additionalProperties":false})", true, false},
 
         {"displays", "Displays",
          "List every display with logical bounds, physical pixel bounds, scale factor and DPI. "
          "Use this to understand a multi-monitor or Retina layout before working with "
          "coordinates.",
-         R"({"type":"object","properties":{}})", true, false},
+         R"({"type":"object","properties":{},"additionalProperties":false})", true, false},
 
         {"screenshot", "Screenshot",
          "Capture the screen, a single display, a window, or a region. Returns an image plus the "
@@ -547,13 +547,14 @@ const std::vector<ActionSpec>& registry() {
          "max_dimension so the payload stays small on high-resolution displays.",
          R"({"type":"object","properties":{
             "display":{"type":"integer","description":"Zero-based display index."},
-            "window_id":{"type":"integer"},
-            "region":{)" CC_RECT R"(},
+            "window_id":{"description":"Capture just this window. From `windows`.","type":"integer"},
+            "region":{"description":"Capture just this rectangle instead of a whole display.",)" CC_RECT
+         R"(},
             "max_dimension":{"type":"integer","description":"Longest side in pixels; 0 = no limit."},
-            "scale":{"type":"number"},
-            "format":{"type":"string","enum":["png","jpeg"],"default":"png"},
-            "quality":{"type":"integer","default":80},
-            "cursor":{"type":"boolean","default":true}}})",
+            "scale":{"description":"Multiply the captured size; 0.5 halves it. Ignored when max_dimension applies.","type":"number"},
+            "format":{"description":"png keeps text crisp; jpeg is smaller for photographic content.","type":"string","enum":["png","jpeg"],"default":"png"},
+            "quality":{"description":"JPEG quality 1-100. Ignored for png.","type":"integer","default":80},
+            "cursor":{"description":"Draw the mouse pointer into the image.","type":"boolean","default":true}}})",
          true, false},
 
         {"snapshot", "Snapshot",
@@ -562,34 +563,36 @@ const std::vector<ActionSpec>& registry() {
          "than pixel coordinates because it survives scrolling and window movement.",
          R"({"type":"object","properties":{
             "vision":{"type":"boolean","default":true,"description":"Include the screenshot."},
-            "interactive_only":{"type":"boolean","default":true},
-            "include_offscreen":{"type":"boolean","default":false},
+            "interactive_only":{"description":"Only elements that can be clicked, typed into or scrolled. Turn off to see static text too, at the cost of a much larger tree.","type":"boolean","default":true},
+            "include_offscreen":{"description":"Include elements scrolled out of view or on another Space.","type":"boolean","default":false},
             "pid":{"type":"integer","description":"Restrict to one process (much faster)."},
-            "max_nodes":{"type":"integer","default":4000},
-            "budget_ms":{"type":"integer","default":1200},
-            "max_dimension":{"type":"integer"},
-            "format":{"type":"string","enum":["png","jpeg"]}}})",
+            "max_nodes":{"description":"Stop after this many elements and report the tree as truncated.","type":"integer","default":4000},
+            "budget_ms":{"description":"Wall-clock budget for the walk. An unresponsive app cannot stall the call past this.","type":"integer","default":1200},
+            "max_dimension":{"description":"Longest side of the screenshot in pixels; 0 = no limit.","type":"integer"},
+            "format":{"description":"png keeps text crisp; jpeg is smaller.","type":"string","enum":["png","jpeg"]}}})",
          true, false},
 
         {"zoom", "Zoom",
          "Re-capture a region of the screen at full resolution. Use it to read small text that "
          "is illegible in a downscaled screenshot. Read-only.",
          R"({"type":"object","required":["region"],"properties":{
-            "region":{)" CC_RECT R"(},
-            "format":{"type":"string","enum":["png","jpeg"]}}})",
+            "region":{"description":"The rectangle to re-capture at full resolution.",)" CC_RECT
+         R"(},
+            "format":{"description":"png keeps text crisp; jpeg is smaller.","type":"string","enum":["png","jpeg"]}}})",
          true, false},
 
         {"cursor_position", "CursorPosition", "Where the mouse pointer currently is.",
-         R"({"type":"object","properties":{}})", true, false},
+         R"({"type":"object","properties":{},"additionalProperties":false})", true, false},
 
         {"move", "Move",
          "Move the pointer. Use profile=\"human\" for motion that passes hover and drag "
          "heuristics, or \"instant\" when only the final position matters.",
          R"({"type":"object","properties":{
-            "at":{)" CC_POINT R"(},
+            "at":{"description":"Where to move the pointer. Omit when using label.",)" CC_POINT
+         R"(},
             "label":{"type":"integer","description":"Element label from the last snapshot."},
-            "profile":{"type":"string","enum":["instant","linear","ease","human"],"default":"ease"},
-            "duration_ms":{"type":"integer","default":180},
+            "profile":{"description":"Motion shape. human adds jitter and an overshoot-and-settle so hover and drag heuristics fire.","type":"string","enum":["instant","linear","ease","human"],"default":"ease"},
+            "duration_ms":{"description":"How long the movement takes. Ignored by the instant profile.","type":"integer","default":180},
             "seed":{"type":"integer","description":"Makes a human path reproducible."}}})",
          false, false},
 
@@ -598,12 +601,12 @@ const std::vector<ActionSpec>& registry() {
          "double click and 3 a triple click, emitted as one stream with the OS click-count field "
          "set so applications see a real multi-click.",
          R"({"type":"object","properties":{
-            "at":{)" CC_POINT R"(},
-            "label":{"type":"integer"},
-            "button":{"type":"string","enum":["left","right","middle","back","forward"],"default":"left"},
-            "count":{"type":"integer","minimum":0,"maximum":3,"default":1},
+            "at":{"description":"Where to click. Omit when using label.",)" CC_POINT R"(},
+            "label":{"description":"Element label from the last snapshot. Preferred over coordinates: it survives scrolling and window movement.","type":"integer"},
+            "button":{"description":"Which button. back and forward are the side buttons browsers use for history.","type":"string","enum":["left","right","middle","back","forward"],"default":"left"},
+            "count":{"description":"0 hovers without clicking, 1 single, 2 double, 3 triple.","type":"integer","minimum":0,"maximum":3,"default":1},
             "modifiers":{)" CC_MODIFIERS R"(},
-            "press_ms":{"type":"integer","default":12}}})",
+            "press_ms":{"description":"Hold the button down this long before releasing.","type":"integer","default":12}}})",
          false, true},
 
         {"scroll", "Scroll",
@@ -611,12 +614,12 @@ const std::vector<ActionSpec>& registry() {
          "emit begin/change/end markers so momentum-aware applications treat it as one gesture.",
          R"({"type":"object","properties":{
             "at":{"description":"Defaults to the current pointer position.",)" CC_POINT R"(},
-            "label":{"type":"integer"},
-            "direction":{"type":"string","enum":["up","down","left","right"],"default":"down"},
-            "clicks":{"type":"integer","default":3},
-            "pixel_units":{"type":"boolean","default":false},
-            "pixels_per_click":{"type":"integer","default":40},
-            "phased":{"type":"boolean","default":false},
+            "label":{"description":"Scroll the element with this label from the last snapshot.","type":"integer"},
+            "direction":{"description":"Which way the content moves.","type":"string","enum":["up","down","left","right"],"default":"down"},
+            "clicks":{"description":"Number of wheel detents. Ignored when pixel_units is set.","type":"integer","default":3},
+            "pixel_units":{"description":"Scroll by exact pixels instead of wheel detents, as a trackpad does.","type":"boolean","default":false},
+            "pixels_per_click":{"description":"Pixels each detent is worth when pixel_units is set.","type":"integer","default":40},
+            "phased":{"description":"Emit begin/change/end phases so momentum-aware apps treat it as a trackpad gesture rather than a wheel.","type":"boolean","default":false},
             "modifiers":{)" CC_MODIFIERS R"(}}})",
          false, false},
 
@@ -625,13 +628,13 @@ const std::vector<ActionSpec>& registry() {
          "a dwell after the press and a settle before the release. That timing is what makes "
          "drag-and-drop actually register in most toolkits.",
          R"({"type":"object","required":["from","to"],"properties":{
-            "from":{)" CC_POINT R"(},
-            "to":{)" CC_POINT R"(},
-            "button":{"type":"string","default":"left"},
-            "duration_ms":{"type":"integer","default":450},
-            "profile":{"type":"string","enum":["instant","linear","ease","human"]},
+            "from":{"description":"Where the press happens.",)" CC_POINT R"(},
+            "to":{"description":"Where the release happens.",)" CC_POINT R"(},
+            "button":{"description":"Which button to hold during the drag.","type":"string","default":"left"},
+            "duration_ms":{"description":"Travel time between the two points.","type":"integer","default":450},
+            "profile":{"description":"Motion shape for the travel.","type":"string","enum":["instant","linear","ease","human"]},
             "modifiers":{)" CC_MODIFIERS R"(},
-            "settle_ms":{"type":"integer","default":40}}})",
+            "settle_ms":{"description":"Pause after pressing, before moving. Drop targets often need this to register the drag at all.","type":"integer","default":40}}})",
          false, true},
 
         {"stroke", "Stroke",
@@ -639,12 +642,13 @@ const std::vector<ActionSpec>& registry() {
          "selections, gesture passwords. Set smooth to spline through the points, and give each "
          "point a pressure for pen-capable backends.",
          R"({"type":"object","required":["points"],"properties":{
-            "points":{"type":"array","minItems":2,"items":{)" CC_POINT_PRESSURE R"(}},
-            "button":{"type":"string","default":"left"},
-            "smooth":{"type":"boolean","default":false},
-            "tension":{"type":"number","default":0.5},
-            "duration_ms":{"type":"integer","default":450},
-            "pen":{"type":"boolean","default":false},
+            "points":{"description":"The path, in order. At least two.","type":"array","minItems":2,"items":{)" CC_POINT_PRESSURE
+         R"(}},
+            "button":{"description":"Which button is held for the whole stroke.","type":"string","default":"left"},
+            "smooth":{"description":"Spline through the points instead of joining them with straight lines.","type":"boolean","default":false},
+            "tension":{"description":"Curve tightness when smooth is set. 0 is angular, 1 is loose.","type":"number","default":0.5},
+            "duration_ms":{"description":"Total time for the whole path.","type":"integer","default":450},
+            "pen":{"description":"Route as pen input where the platform supports it, so pressure is honoured.","type":"boolean","default":false},
             "modifiers":{)" CC_MODIFIERS R"(}}})",
          false, true},
 
@@ -654,20 +658,20 @@ const std::vector<ActionSpec>& registry() {
          "contacts; macOS emulates most of these) - call capabilities to see which you will get, "
          "or set require_native to refuse emulation.",
          R"({"type":"object","required":["kind"],"properties":{
-            "kind":{"type":"string","enum":["tap","swipe","pan","pinch","rotate","smart_zoom","force_press","edge_swipe","long_press"]},
+            "kind":{"description":"Which gesture to perform. Check `capabilities` first: several are emulated on some platforms.","type":"string","enum":["tap","swipe","pan","pinch","rotate","smart_zoom","force_press","edge_swipe","long_press"]},
             "at":{"description":"Gesture centre; defaults to the pointer position.",)" CC_POINT
          R"(},
             "fingers":{"type":"integer","minimum":1,"maximum":5,"description":"Defaults to 1 for tap/long_press/force_press/edge_swipe, 2 otherwise."},
-            "direction":{"type":"string","enum":["up","down","left","right"]},
-            "distance":{"type":"number","default":200},
+            "direction":{"description":"Direction for swipe, pan and edge_swipe.","type":"string","enum":["up","down","left","right"]},
+            "distance":{"description":"Travel distance in points for swipe and pan.","type":"number","default":200},
             "scale":{"type":"number","default":2,"description":"Pinch: >1 zooms in, <1 out."},
             "degrees":{"type":"number","description":"Rotate: positive is counter-clockwise."},
-            "spread":{"type":"number","default":120},
-            "duration_ms":{"type":"integer","default":300},
-            "hold_ms":{"type":"integer","default":0},
+            "spread":{"description":"Starting distance between contacts for pinch and rotate.","type":"number","default":120},
+            "duration_ms":{"description":"How long the gesture takes.","type":"integer","default":300},
+            "hold_ms":{"description":"Hold at the end before releasing the contacts.","type":"integer","default":0},
             "path":{"type":"array","description":"Pan only.",
                     "items":{)" CC_POINT R"(}},
-            "require_native":{"type":"boolean","default":false},
+            "require_native":{"description":"Fail rather than substitute an emulation. Use when a real multi-touch event is the point.","type":"boolean","default":false},
             "modifiers":{)" CC_MODIFIERS R"(}}})",
          false, true},
 
@@ -675,32 +679,32 @@ const std::vector<ActionSpec>& registry() {
          "Press a key or chord: \"cmd+shift+a\", \"ctrl-c\", \"F5\", \"escape\". Space-separated "
          "chords run in sequence (\"cmd+k cmd+s\").",
          R"({"type":"object","required":["keys"],"properties":{
-            "keys":{"type":"string"},
-            "repeat":{"type":"integer","default":1}}})",
+            "keys":{"description":"A chord such as \"cmd+shift+a\", or several separated by spaces to run in sequence (\"cmd+k cmd+s\").","type":"string"},
+            "repeat":{"description":"Send the chord this many times.","type":"integer","default":1}}})",
          false, true},
 
         {"key_hold", "KeyHold", "Hold a key or chord down for a duration, then release it.",
          R"({"type":"object","required":["keys"],"properties":{
-            "keys":{"type":"string"},
-            "duration_ms":{"type":"integer","default":500}}})",
+            "keys":{"description":"The chord to hold.","type":"string"},
+            "duration_ms":{"description":"How long to hold it before releasing.","type":"integer","default":500}}})",
          false, true},
 
         {"key_down", "KeyDown",
          "Press a key and leave it held. Pair with key_up. Prefer key or key_hold unless you "
          "genuinely need the key held across other actions.",
-         R"({"type":"object","required":["key"],"properties":{"key":{"type":"string"}}})", false,
-         true},
+         R"({"type":"object","required":["key"],"properties":{"key":{"description":"The key to press and leave held. Pair with key_up.","type":"string"}}})",
+         false, true},
 
         {"key_up", "KeyUp", "Release a key held by key_down.",
-         R"({"type":"object","required":["key"],"properties":{"key":{"type":"string"}}})", false,
-         true},
+         R"({"type":"object","required":["key"],"properties":{"key":{"description":"The key to release.","type":"string"}}})",
+         false, true},
 
         {"type", "Type",
          "Type text into whatever has keyboard focus, or into a labelled/clicked field first. "
          "Unicode is injected directly, so emoji and non-Latin scripts work regardless of the "
          "active keyboard layout.",
          R"({"type":"object","required":["text"],"properties":{
-            "text":{"type":"string"},
+            "text":{"description":"The text to type. Unicode is injected directly, so emoji and CJK do not depend on the keyboard layout.","type":"string"},
             "at":{"description":"Click here first.",)" CC_POINT R"(},
             "label":{"type":"integer","description":"Click this element first."},
             "clear":{"type":"boolean","default":false,"description":"Select-all and delete first."},
@@ -709,98 +713,98 @@ const std::vector<ActionSpec>& registry() {
          false, true},
 
         {"wait", "Wait", "Pause for a number of milliseconds.",
-         R"({"type":"object","required":["ms"],"properties":{"ms":{"type":"integer"}}})", true,
-         false},
+         R"({"type":"object","required":["ms"],"properties":{"ms":{"description":"How long to pause.","type":"integer"}}})",
+         true, false},
 
         {"wait_for", "WaitFor",
          "Poll until a UI condition holds, inside one call. Much cheaper than a snapshot loop "
          "from the client.",
          R"({"type":"object","required":["condition"],"properties":{
-            "condition":{"type":"string","enum":["text_exists","element_exists","window_exists","window_focused","element_enabled"]},
-            "text":{"type":"string"},
-            "window":{"type":"string"},
-            "timeout_ms":{"type":"integer","default":10000},
-            "interval_ms":{"type":"integer","default":250}}})",
+            "condition":{"description":"What to wait for.","type":"string","enum":["text_exists","element_exists","window_exists","window_focused","element_enabled"]},
+            "text":{"description":"Text to look for, for the text condition.","type":"string"},
+            "window":{"description":"Window title to match, for the window conditions.","type":"string"},
+            "timeout_ms":{"description":"Give up after this long and report that the condition was not met.","type":"integer","default":10000},
+            "interval_ms":{"description":"How often to re-check.","type":"integer","default":250}}})",
          true, false},
 
         {"windows", "Windows",
          "List, activate, move, resize, change the state of, or close windows.",
          R"({"type":"object","properties":{
-            "mode":{"type":"string","enum":["list","activate","bounds","state","close","focused"],"default":"list"},
-            "window_id":{"type":"integer"},
+            "mode":{"description":"What to do. list is read-only; the rest act on one window.","type":"string","enum":["list","activate","bounds","state","close","focused"],"default":"list"},
+            "window_id":{"description":"Which window to act on. From mode=list.","type":"integer"},
             "title":{"type":"string","description":"Fuzzy-matched alternative to window_id."},
             "bounds":{"description":"Required for mode=bounds.",)" CC_RECT R"(},
-            "state":{"type":"string","enum":["normal","minimized","maximized","fullscreen","hidden"]},
-            "include_offscreen":{"type":"boolean","default":false}}})",
+            "state":{"description":"Target state for mode=state.","type":"string","enum":["normal","minimized","maximized","fullscreen","hidden"]},
+            "include_offscreen":{"description":"Include windows on other Spaces or minimised.","type":"boolean","default":false}}})",
          false, true},
 
         {"app", "App", "List, launch, activate or quit applications.",
          R"({"type":"object","properties":{
-            "mode":{"type":"string","enum":["list","launch","activate","quit"],"default":"list"},
+            "mode":{"description":"What to do.","type":"string","enum":["list","launch","activate","quit"],"default":"list"},
             "name":{"type":"string","description":"Display name or bundle id."},
-            "executable":{"type":"string"},
-            "args":{"type":"array","items":{"type":"string"}},
-            "cwd":{"type":"string"},
-            "pid":{"type":"integer"},
-            "force":{"type":"boolean","default":false},
-            "timeout_ms":{"type":"integer","default":8000}}})",
+            "executable":{"description":"Application name, bundle id, or path, for launch.","type":"string"},
+            "args":{"description":"Arguments passed to the executable on launch.","type":"array","items":{"type":"string"}},
+            "cwd":{"description":"Working directory for launch.","type":"string"},
+            "pid":{"description":"Which process to act on, instead of matching by name.","type":"integer"},
+            "force":{"description":"Kill rather than asking the app to quit. Unsaved work is lost.","type":"boolean","default":false},
+            "timeout_ms":{"description":"How long to wait for the app to appear or exit.","type":"integer","default":8000}}})",
          false, true},
 
         {"elements", "Elements",
          "Query the accessibility tree without taking a screenshot: the full tree, the element "
          "under a point, or the focused element.",
          R"({"type":"object","properties":{
-            "mode":{"type":"string","enum":["tree","at","focused"],"default":"tree"},
+            "mode":{"description":"tree returns the whole tree, at returns the element under a point, focused returns the focused one.","type":"string","enum":["tree","at","focused"],"default":"tree"},
             "at":{"description":"Required for mode=at.",)" CC_POINT R"(},
-            "pid":{"type":"integer"},
-            "interactive_only":{"type":"boolean","default":true},
-            "max_nodes":{"type":"integer"},
-            "budget_ms":{"type":"integer"}}})",
+            "pid":{"description":"Restrict to one process. Much faster than walking every application.","type":"integer"},
+            "interactive_only":{"description":"Only elements that can be interacted with.","type":"boolean","default":true},
+            "max_nodes":{"description":"Stop after this many elements and report the tree as truncated.","type":"integer"},
+            "budget_ms":{"description":"Wall-clock budget for the walk.","type":"integer"}}})",
          true, false},
 
         {"clipboard", "Clipboard", "Read or write the clipboard.",
          R"({"type":"object","properties":{
-            "mode":{"type":"string","enum":["get","set"],"default":"get"},
-            "text":{"type":"string"}}})",
+            "mode":{"description":"read returns the current contents; write replaces them.","type":"string","enum":["get","set"],"default":"get"},
+            "text":{"description":"What to put on the clipboard, for mode=write.","type":"string"}}})",
          false, false},
 
         {"shell", "Shell",
          "Run a command. Disabled when the server is started with --no-shell. The command runs "
          "with the same privileges as this process.",
          R"({"type":"object","required":["command"],"properties":{
-            "command":{"type":"string"},
+            "command":{"description":"The command line to run. On Windows this goes to PowerShell unless interpreter says otherwise.","type":"string"},
             "shell":{"type":"string","description":"Override the interpreter; \"osascript\" on macOS."},
-            "cwd":{"type":"string"},
-            "timeout_ms":{"type":"integer","default":30000}}})",
+            "cwd":{"description":"Working directory for the command.","type":"string"},
+            "timeout_ms":{"description":"Kill the command after this long.","type":"integer","default":30000}}})",
          false, true},
 
         {"process", "Process", "List or terminate processes.",
          R"({"type":"object","properties":{
-            "mode":{"type":"string","enum":["list","kill"],"default":"list"},
-            "pid":{"type":"integer"},
-            "name":{"type":"string"},
-            "force":{"type":"boolean","default":false},
-            "limit":{"type":"integer","default":30},
-            "sort":{"type":"string","enum":["memory","name","pid"],"default":"memory"}}})",
+            "mode":{"description":"list is read-only; kill terminates.","type":"string","enum":["list","kill"],"default":"list"},
+            "pid":{"description":"Kill exactly this process.","type":"integer"},
+            "name":{"description":"Match processes whose name contains this.","type":"string"},
+            "force":{"description":"Send an uncatchable kill. The process cannot save state or clean up.","type":"boolean","default":false},
+            "limit":{"description":"Return at most this many processes.","type":"integer","default":30},
+            "sort":{"description":"How to order the list.","type":"string","enum":["memory","name","pid"],"default":"memory"}}})",
          false, true},
 
         {"notify", "Notify", "Show a desktop notification.",
          R"({"type":"object","required":["message"],"properties":{
-            "message":{"type":"string"},
-            "title":{"type":"string"},
-            "subtitle":{"type":"string"},
-            "sound":{"type":"string"}}})",
+            "message":{"description":"Body text.","type":"string"},
+            "title":{"description":"Notification title.","type":"string"},
+            "subtitle":{"description":"Secondary line, where the platform shows one.","type":"string"},
+            "sound":{"description":"Play the default notification sound.","type":"string"}}})",
          false, false},
 
         {"registry", "Registry",
          "Read or write the Windows registry. Returns unsupported on macOS and Linux, and is "
          "disabled unless the server is started with --allow-registry.",
          R"({"type":"object","required":["mode","path"],"properties":{
-            "mode":{"type":"string","enum":["get","set","delete","list"]},
-            "path":{"type":"string"},
-            "name":{"type":"string"},
-            "value":{"type":"string"},
-            "type":{"type":"string","default":"String"}}})",
+            "mode":{"description":"read, write, delete or list. Windows only.","type":"string","enum":["get","set","delete","list"]},
+            "path":{"description":"Key path, for example HKCU\\\\Software\\\\Example.","type":"string"},
+            "name":{"description":"Value name within the key.","type":"string"},
+            "value":{"description":"Value to write, for mode=write.","type":"string"},
+            "type":{"description":"Registry value type, for mode=write.","type":"string","default":"String"}}})",
          false, true},
 
         {"device", "Device",
@@ -808,38 +812,39 @@ const std::vector<ActionSpec>& registry() {
          "are in the device's own points, translated automatically. Modes cover listing, "
          "lifecycle, input, screenshots and the device UI tree.",
          R"({"type":"object","properties":{
-            "mode":{"type":"string","enum":["list","info","boot","shutdown","tap","swipe","stroke","gesture","type","button","screenshot","shell","install","launch","terminate","open_url","tree"],"default":"list"},
+            "mode":{"description":"What to do with the device.","type":"string","enum":["list","info","boot","shutdown","tap","swipe","stroke","gesture","type","button","screenshot","shell","install","launch","terminate","open_url","tree"],"default":"list"},
             "device":{"type":"string","description":"UDID, adb serial, or a fuzzy name."},
-            "transport":{"type":"string","enum":["auto","bridge","onscreen"],"default":"auto"},
+            "transport":{"description":"bridge uses the device's own tooling and is exact; onscreen locates the device window and works for anything visible, including mirrored phones. auto prefers bridge.","type":"string","enum":["auto","bridge","onscreen"],"default":"auto"},
             "at":{"description":"Device-space point for tap.",)" CC_POINT R"(},
-            "from":{)" CC_POINT R"(},"to":{)" CC_POINT R"(},
+            "from":{"description":"Start point for swipe, in device points.",)" CC_POINT
+         R"(},"to":{"description":"End point for swipe, in device points.",)" CC_POINT R"(},
             "points":{"type":"array","description":"Device points, for stroke and gesture modes.",
                       "items":{"type":"object","required":["x","y"],"properties":{"x":{"type":"number"},"y":{"type":"number"}}}},
-            "text":{"type":"string"},
+            "text":{"description":"Text to type, or the bundle id / package name for install, launch and terminate.","type":"string"},
             "button":{"type":"string","description":"home, back, power, enter, volumeup, ..."},
-            "duration_ms":{"type":"integer"},
-            "hold_ms":{"type":"integer"},
-            "count":{"type":"integer","default":1},
+            "duration_ms":{"description":"How long the action takes.","type":"integer"},
+            "hold_ms":{"description":"Hold at the end before releasing.","type":"integer"},
+            "count":{"description":"Contact count for gestures that take one.","type":"integer","default":1},
             "path":{"type":"string","description":"App bundle/apk path for install."},
             "bundle":{"type":"string","description":"Bundle id or package name."},
-            "url":{"type":"string"},
-            "command":{"type":"string"},
-            "booted_only":{"type":"boolean","default":false},
+            "url":{"description":"URL to open, for mode=open_url.","type":"string"},
+            "command":{"description":"Command to run on the device, for mode=shell.","type":"string"},
+            "booted_only":{"description":"Only list devices that are running.","type":"boolean","default":false},
             "kind":{"type":"string","description":"Gesture kind for mode=gesture."},
-            "format":{"type":"string","enum":["png","jpeg"]}}})",
+            "format":{"description":"Screenshot format.","type":"string","enum":["png","jpeg"]}}})",
          false, true},
 
         {"release_all", "ReleaseAll",
          "Release every held mouse button, key and touch contact. Use it to recover after an "
          "interrupted drag leaves the desktop in a stuck state.",
-         R"({"type":"object","properties":{}})", false, false},
+         R"({"type":"object","properties":{},"additionalProperties":false})", false, false},
 
         {"batch", "Batch",
          "Run several actions in one call. Each round trip to this server costs far more than "
          "the actions themselves, so batching a predictable sequence (click, type, press Return) "
          "is dramatically faster. Stops at the first failure and reports which index failed.",
          R"({"type":"object","required":["actions"],"properties":{
-            "actions":{"type":"array","items":{"type":"object","required":["action"]}}}})",
+            "actions":{"description":"The actions to run in order, each an object with an \"action\" key naming the tool and the rest of its arguments alongside. Stops at the first failure and reports which index failed.","type":"array","items":{"type":"object","required":["action"]}}}})",
          false, true},
     };
     return specs;
@@ -1925,9 +1930,9 @@ ActionResult run(Session& session, std::string_view name, const Value& args) {
                     "Known actions: " + known);
     }
 
-    // Exceptions must never cross this boundary: the MCP server and the C ABI
-    // both treat a throw as fatal, and a bad JSON shape should be an error
-    // response, not a crashed server.
+    // Exceptions must never cross this boundary. A throw reaching the stdio
+    // loop takes the MCP session down with no diagnostic the client can show,
+    // and a bad JSON shape should be an error response, not a dead server.
     try {
         if (name == "system") return act_system(session, args);
         if (name == "permissions") return act_permissions(session, args);

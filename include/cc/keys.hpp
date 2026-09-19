@@ -10,8 +10,9 @@
 
 namespace cc {
 
-// Platform-independent key identifiers. Values are stable and form part of the
-// C ABI, so append only.
+// Platform-independent key identifiers. The numeric values are persisted in
+// nothing and crossed by no ABI, but they appear in saved JSON payloads and in
+// the tests, so append rather than renumber.
 enum class Key : std::uint16_t {
     Unknown = 0,
 

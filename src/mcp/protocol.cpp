@@ -82,20 +82,6 @@ json::Value unsupported_version_error(std::string_view requested) {
     return error;
 }
 
-json::Value missing_capability_error(const std::vector<std::string>& required) {
-    json::Value list = json::Value::array();
-    for (const auto& c : required) list.push_back(c);
-
-    json::Value data = json::Value::object();
-    data.set("requiredCapabilities", list);
-
-    json::Value error = json::Value::object();
-    error.set("code", error_codes::kMissingRequiredClientCapability);
-    error.set("message", "Missing required client capability");
-    error.set("data", data);
-    return error;
-}
-
 json::Value invalid_params_error(std::string_view message) {
     json::Value error = json::Value::object();
     error.set("code", error_codes::kInvalidParams);

@@ -75,7 +75,13 @@ json::Value tool_definitions(const ServerConfig& cfg) {
         ann.set("readOnlyHint", spec.read_only);
         ann.set("destructiveHint", spec.destructive);
         ann.set("idempotentHint", spec.read_only);
-        ann.set("openWorldHint", false);
+        // openWorldHint means the tool can reach entities outside this
+        // machine. Almost everything here drives the local desktop and cannot,
+        // but `shell` runs whatever it is given - it can fetch from the
+        // network or install software - and `device` talks to a simulator,
+        // emulator or handset that is a separate system. Claiming a closed
+        // world for those two would understate what a client is approving.
+        ann.set("openWorldHint", name == "shell" || name == "device");
         tool.set("annotations", ann);
 
         tools.push_back(tool);

@@ -57,7 +57,8 @@ inline constexpr int kMethodNotFound = -32601;
 inline constexpr int kInvalidParams = -32602;
 inline constexpr int kInternalError = -32603;
 inline constexpr int kHeaderMismatch = -32020;
-inline constexpr int kMissingRequiredClientCapability = -32021;
+// -32021, MissingRequiredClientCapability, is not here: this server requires
+// no capability of its clients, so it has nothing to refuse them for.
 inline constexpr int kUnsupportedProtocolVersion = -32022;
 }  // namespace error_codes
 
@@ -100,7 +101,6 @@ json::Value finalize_result(json::Value result, std::string_view result_type = "
 json::Value& add_cache_hints(json::Value& result, long long ttl_ms, std::string_view scope);
 
 json::Value unsupported_version_error(std::string_view requested);
-json::Value missing_capability_error(const std::vector<std::string>& required);
 json::Value invalid_params_error(std::string_view message);
 
 // The server's own identity, as reported in `_meta` and server/discover.
