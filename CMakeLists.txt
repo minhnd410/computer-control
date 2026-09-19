@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(computer_control
-        VERSION 0.6.1
+        VERSION 0.6.2
         DESCRIPTION "Cross-platform desktop and mobile-simulator automation core"
         LANGUAGES C CXX)
 

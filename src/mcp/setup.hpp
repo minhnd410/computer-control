@@ -52,6 +52,10 @@ struct AgentStatus {
 };
 
 AgentStatus agent_status();
+// Runs a tool on the shared service and returns its text output. Empty on
+// failure. Used by --doctor, which must report the service's state rather than
+// the state of whatever terminal happened to launch it.
+std::string ask_service(const std::string& tool);
 // Writes the plist, starts the job, and waits for the port to answer.
 Status install_agent(const std::string& command, int port, std::string* token_out);
 Status uninstall_agent();

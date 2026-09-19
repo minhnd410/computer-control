@@ -62,6 +62,10 @@ DIAGNOSTICS
                              exit. Run this first when the server is connected
                              but every tool seems to do nothing. Exits non-zero
                              if a permission is missing.
+                             Reports the shared service when one is installed,
+                             since that is the process whose grants matter.
+  --local                    With --doctor: report this process rather than the
+                             shared service.
   --request-permissions      Ask the OS for anything missing, then --doctor.
                              On macOS this is what puts the binary in the
                              Accessibility list.
@@ -225,6 +229,13 @@ alone.
     }
     if (env_or_null("CC_NO_SHELL")) cfg.session.allow_shell = false;
 
+    // --doctor reports the shared service when one exists; --local overrides
+    // that for debugging the binary in front of you.
+    bool local_only = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--local") local_only = true;
+    }
+
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         auto next = [&](const char* what) -> std::string {
@@ -255,6 +266,53 @@ alone.
             // reachable without a client attached - which is why this binary
             // is the only one an operator needs to install.
             const bool request = (arg == "--request-permissions");
+
+            // When a shared service is installed, that is the process whose
+            // permissions decide whether anything works - and it is not this
+            // one. Reporting the local process here is how someone ends up
+            // reading "granted" in a terminal while every tool call fails,
+            // because what they measured was their terminal's grant.
+            if (!local_only) {
+                const cc::mcp::AgentStatus agent = cc::mcp::agent_status();
+                if (agent.installed) {
+                    std::cout << "Shared service  " << (agent.running ? "running" : agent.detail)
+                              << "  http://127.0.0.1:" << agent.port << "/mcp\n"
+                              << "This is the process that needs the permissions; this terminal's\n"
+                              << "own grants do not affect it.\n\n";
+                    if (!agent.running) {
+                        std::cout << "It is not answering, so its permissions cannot be read.\n"
+                                  << "  computer-control-mcp setup --restart\n";
+                        return 1;
+                    }
+                    const std::string perms = cc::mcp::ask_service("permissions");
+                    const std::string caps = cc::mcp::ask_service("capabilities");
+                    if (perms.empty()) {
+                        std::cout << "Could not read the service's permissions.\n"
+                                  << "  computer-control-mcp setup --status\n";
+                        return 1;
+                    }
+                    std::cout << perms << "\n";
+
+                    // The remedy the service prints says to run
+                    // --request-permissions, which from a terminal asks on
+                    // behalf of the terminal - the exact confusion this whole
+                    // branch exists to stop. Say what actually works here.
+                    const bool denied = perms.find("denied") != std::string::npos;
+                    if (denied) {
+                        std::cout << "To fix, in System Settings > Privacy & Security, enable\n"
+                                  << "computer-control-mcp under Accessibility and under Screen &\n"
+                                  << "System Audio Recording (add it with + if it is missing),\n"
+                                  << "then reload the service so it reads the new grant:\n"
+                                  << "  computer-control-mcp setup --restart\n\n"
+                                  << "Running --request-permissions in a terminal will not help:\n"
+                                  << "it asks for that terminal, not for the service.\n\n";
+                    }
+                    if (!caps.empty()) std::cout << caps << "\n";
+                    std::cout << "Add `--local` to report this process instead.\n";
+                    return denied ? 1 : 0;
+                }
+            }
+
             if (request) {
                 for (const auto& st : cc::check_permissions()) {
                     if (st.state != cc::PermissionState::Granted &&

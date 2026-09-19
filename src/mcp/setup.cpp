@@ -348,6 +348,36 @@ std::string agent_token() {
     return token;
 }
 
+std::string ask_service(const std::string& tool) {
+    const AgentStatus st = agent_status();
+    if (!st.installed || st.port == 0) return {};
+
+    const std::string body = std::string(R"({"jsonrpc":"2.0","id":1,"method":"tools/call",)") +
+                             R"("params":{"name":")" + tool + R"(","arguments":{},"_meta":{)" +
+                             R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
+                             R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
+
+    std::vector<std::string> args{
+        "-fsS", "-m", "8", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+    const std::string token = agent_token();
+    if (!token.empty()) {
+        args.push_back("-H");
+        args.push_back("Authorization: Bearer " + token);
+    }
+    args.push_back("-d");
+    args.push_back(body);
+
+    const auto r = devices::exec("curl", args, std::chrono::milliseconds{10000});
+    if (r.exit_code != 0 || r.out.empty()) return {};
+
+    json::ParseError pe;
+    const json::Value v = json::parse(r.out, &pe);
+    if (!pe.ok) return {};
+    const json::Value& content = v["result"]["content"];
+    if (!content.is_array() || content.size() == 0) return {};
+    return content[0]["text"].as_string();
+}
+
 AgentStatus agent_status() {
     AgentStatus st;
     st.plist = agent_plist_path();
