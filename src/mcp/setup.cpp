@@ -185,6 +185,11 @@ std::vector<ClientTarget> client_targets() {
     {
         ClientTarget t = target("codex", "Codex CLI", h + "/.codex/config.toml", "mcp_servers");
         t.toml = true;
+        // Codex takes a streamable-HTTP server as `url`, but reads the bearer
+        // token from an environment variable it must already have - it will
+        // not take the token itself from the config file.
+        t.supports_http = true;
+        t.note = "export CC_AUTH_TOKEN so Codex can authenticate (see setup --status)";
         add(std::move(t));
     }
 #if !defined(_WIN32)
@@ -464,6 +469,22 @@ bool configure_client_http(const ClientTarget& t, const std::string& server_name
         if (error) *error = t.name + " cannot be pointed at an HTTP endpoint from its config";
         return false;
     }
+
+    if (t.toml) {
+        // Codex names an environment variable rather than carrying the token,
+        // so the secret never lands in the config file - but the variable has
+        // to be exported where Codex can see it.
+        std::string text = read_file(t.config);
+        const std::string header = "[" + t.container + "." + server_name + "]";
+        if (text.find(header) != std::string::npos) return true;
+        if (!text.empty() && text.back() != '\n') text += "\n";
+        if (!text.empty()) text += "\n";
+        text += header + "\n";
+        text += "url = \"" + url + "\"\n";
+        text += "bearer_token_env_var = \"CC_AUTH_TOKEN\"\n";
+        return write_file(t.config, text, error);
+    }
+
     json::Value root = json::Value::object();
     const std::string existing = read_file(t.config);
     if (!existing.empty()) {

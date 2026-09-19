@@ -243,7 +243,14 @@ TEST(setup_knows_which_clients_can_reach_an_http_endpoint) {
             ::test::report(t.supports_http, "client supports http", __FILE__, __LINE__, note);
             saw_http = true;
         }
-        if (t.id == "claude-desktop" || t.id == "codex") {
+        // Codex takes `--url` for a streamable HTTP server, verified against
+        // the CLI itself; it belongs in the http group.
+        if (t.id == "codex") {
+            ::test::report(t.supports_http, "codex supports http", __FILE__, __LINE__,
+                           "codex mcp add --url writes a url entry");
+            saw_http = true;
+        }
+        if (t.id == "claude-desktop") {
             char note[128];
             std::snprintf(note, sizeof(note), "%s should stay stdio-only", t.id.c_str());
             ::test::report(!t.supports_http, "client is stdio-only", __FILE__, __LINE__, note);
@@ -252,4 +259,26 @@ TEST(setup_knows_which_clients_can_reach_an_http_endpoint) {
     }
     CHECK(saw_http);
     CHECK(saw_stdio_only);
+}
+
+TEST(setup_writes_codex_http_as_toml_with_an_env_var_token) {
+    // Codex will not take the token from the config file, so the entry names
+    // the variable instead. Writing the JSON shape here would produce a server
+    // Codex ignores.
+    const std::string path = write_temp("codexhttp.toml", "model = \"o3\"\n");
+    mcp::ClientTarget t = json_target(path, "mcp_servers");
+    t.toml = true;
+    t.supports_http = true;
+
+    std::string error;
+    CHECK(mcp::configure_client_http(t, "computer-control", "http://127.0.0.1:8765/mcp", "secret",
+                                     &error));
+    const std::string text = slurp(path);
+    CHECK(text.find("[mcp_servers.computer-control]") != std::string::npos);
+    CHECK(text.find("url = \"http://127.0.0.1:8765/mcp\"") != std::string::npos);
+    CHECK(text.find("bearer_token_env_var = \"CC_AUTH_TOKEN\"") != std::string::npos);
+    // The secret itself must not be in the file.
+    CHECK(text.find("secret") == std::string::npos);
+    CHECK(text.find("model = \"o3\"") != std::string::npos);
+    remove_file(path);
 }
