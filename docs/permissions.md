@@ -58,7 +58,18 @@ cmake -S . -B build -DCC_CODESIGN_IDENTITY="Developer ID Application: Your Name 
 
 A self-signed certificate from Keychain Access works too and costs nothing.
 
-When the MCP server is launched by Claude Desktop, the responsible process is Claude Desktop — so its grants apply and there is usually nothing to do.
+When the MCP server is launched by Claude Desktop, the responsible process is Claude Desktop — so **Claude Desktop** is what needs the grant, not this binary. The same is true of every other client: VS Code, Cursor and each terminal are separate subjects, so configuring the server in three clients means granting Accessibility three times, usually with no prompt to guide you because macOS treats the request as already answered by the parent.
+
+`computer-control-mcp setup` offers a way out of that. Its **shared service** installs a launchd job, which is its own responsible process: it appears in System Settings under its own name, one grant covers every client, and clients reach it over loopback HTTP instead of each spawning a copy.
+
+```bash
+computer-control-mcp setup --shared     # install and point clients at it
+computer-control-mcp setup --status     # is it running?
+computer-control-mcp setup --restart    # after granting a permission
+computer-control-mcp setup --stop       # remove it
+```
+
+The trade-off is real and worth stating: a background process that can drive your desktop is running whether or not a client is attached. It listens on 127.0.0.1 only, requires a bearer token kept at `~/.config/computer-control/token` (mode 0600) and passed to the job through its environment rather than its argument list, and refuses cross-origin requests. Claude Desktop and Codex cannot be pointed at an HTTP endpoint from their config, so they stay on stdio and still need their own grant; `setup` says which ones those are.
 
 `CGDisplayCreateImage` and `CGWindowListCreateImage` are **removed**, not merely deprecated, in the macOS 15 SDK. Capture uses ScreenCaptureKit, which needs macOS 12.3+.
 

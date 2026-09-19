@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "cc/types.hpp"
+
 namespace cc::mcp {
 
 // Where a client keeps its MCP servers, and under which key.
@@ -23,8 +25,38 @@ struct ClientTarget {
     std::string container;    // JSON key holding the server map ("mcpServers")
     bool toml = false;        // Codex keeps its config in TOML
     bool needs_type = false;  // VS Code wants an explicit "type": "stdio"
-    std::string note;         // shown alongside the entry
+    // Whether this client can talk to an HTTP endpoint from its config file.
+    // Claude Desktop cannot - it only launches local commands - so it keeps a
+    // stdio entry even in shared mode, and keeps needing its own grant.
+    bool supports_http = false;
+    std::string note;  // shown alongside the entry
 };
+
+// The shared background service: one process started by launchd, which every
+// client connects to over loopback HTTP.
+//
+// This exists for one reason. A grant belongs to the *responsible process*, so
+// a server launched over stdio by Claude Desktop uses Claude Desktop's grant,
+// one launched by VS Code uses VS Code's, and each of them has to be granted
+// Accessibility separately - usually with no prompt, because macOS considers
+// the request already answered by the parent. Started by launchd the server is
+// its own responsible process: it appears in System Settings under its own
+// name, and one grant serves every client.
+struct AgentStatus {
+    bool installed = false;
+    bool running = false;
+    int port = 0;
+    std::string plist;
+    std::string binary;
+    std::string detail;
+};
+
+AgentStatus agent_status();
+// Writes the plist, starts the job, and waits for the port to answer.
+Status install_agent(const std::string& command, int port, std::string* token_out);
+Status uninstall_agent();
+// The bearer token, generated on first install and stored 0600.
+std::string agent_token();
 
 // Every client this knows how to configure, in a stable order. Entries whose
 // config directory does not exist are still returned; `installed` says which
@@ -37,6 +69,14 @@ struct SetupOptions {
     bool list = false;
     bool permissions = true;
     bool assume_yes = false;
+    // Tri-state: unset means ask when it matters, which is when more than one
+    // client is being configured.
+    enum class Mode { Ask, Shared, Stdio };
+    Mode mode = Mode::Ask;
+    bool stop = false;     // tear the agent down and exit
+    bool status = false;   // report on the agent and exit
+    bool restart = false;  // reload the agent, after a permission change
+    int port = 8765;
     std::string server_name = "computer-control";
     std::string command;  // defaults to this executable's path
 };
@@ -47,5 +87,9 @@ int run_setup(const SetupOptions& opts);
 // Writes (or updates) one client's config. `error` is set on failure.
 bool configure_client(const ClientTarget& t, const std::string& server_name,
                       const std::string& command, std::string* error);
+
+// Points a client at the shared service instead of spawning its own.
+bool configure_client_http(const ClientTarget& t, const std::string& server_name,
+                           const std::string& url, const std::string& token, std::string* error);
 
 }  // namespace cc::mcp

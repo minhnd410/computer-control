@@ -121,6 +121,18 @@ int main(int argc, char** argv) {
             const std::string a = argv[i];
             if (a == "--list") {
                 opts.list = true;
+            } else if (a == "--shared") {
+                opts.mode = cc::mcp::SetupOptions::Mode::Shared;
+            } else if (a == "--per-client") {
+                opts.mode = cc::mcp::SetupOptions::Mode::Stdio;
+            } else if (a == "--status") {
+                opts.status = true;
+            } else if (a == "--stop") {
+                opts.stop = true;
+            } else if (a == "--restart") {
+                opts.restart = true;
+            } else if (a == "--port" && i + 1 < argc) {
+                opts.port = std::atoi(argv[++i]);
             } else if (a == "--no-permissions") {
                 opts.permissions = false;
             } else if (a == "--yes" || a == "-y") {
@@ -147,6 +159,15 @@ USAGE
 OPTIONS
   --list                 Show every client this can configure and where each
                          one keeps its config, then exit.
+  --shared               Run one background service that every client shares,
+                         without asking. macOS only.
+  --per-client           Give each client its own copy over stdio, without
+                         asking.
+  --status               Report on the shared service and exit.
+  --restart              Reload the shared service, after granting it a
+                         permission.
+  --stop                 Stop and remove the shared service.
+  --port N               Port for the shared service. Default: 8765
   --client a,b           Configure these clients without asking. Ids come from
                          --list.
   --no-permissions       Skip the permission step.

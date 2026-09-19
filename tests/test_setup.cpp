@@ -192,3 +192,64 @@ TEST(setup_knows_where_each_client_keeps_its_config) {
                        "client config path is absolute", __FILE__, __LINE__, note);
     }
 }
+
+TEST(setup_http_entry_carries_the_token_and_leaves_others_alone) {
+    const std::string path = write_temp("http.json", R"({
+      "mcpServers": {"theirs": {"command": "/usr/bin/other"}}
+    })");
+
+    std::string error;
+    mcp::ClientTarget t = json_target(path);
+    t.supports_http = true;
+    CHECK(mcp::configure_client_http(t, "computer-control", "http://127.0.0.1:8765/mcp", "deadbeef",
+                                     &error));
+
+    json::ParseError pe;
+    json::Value v = json::parse(slurp(path), &pe);
+    CHECK(pe.ok);
+    const json::Value& e = v["mcpServers"]["computer-control"];
+    CHECK_EQ(e["type"].as_string(), std::string("http"));
+    CHECK_EQ(e["url"].as_string(), std::string("http://127.0.0.1:8765/mcp"));
+    CHECK_EQ(e["headers"]["Authorization"].as_string(), std::string("Bearer deadbeef"));
+    // A stdio entry would carry `command`; switching modes must not leave both.
+    CHECK(!e.contains("command"));
+    CHECK_EQ(v["mcpServers"]["theirs"]["command"].as_string(), std::string("/usr/bin/other"));
+    remove_file(path);
+}
+
+TEST(setup_refuses_an_http_entry_for_a_client_that_cannot_use_one) {
+    // Claude Desktop only launches local commands. Writing an http entry into
+    // its config would produce a server it silently ignores, which is worse
+    // than telling the caller it cannot be done.
+    const std::string path = write_temp("nohttp.json", "");
+    mcp::ClientTarget t = json_target(path);
+    t.supports_http = false;
+
+    std::string error;
+    CHECK(!mcp::configure_client_http(t, "computer-control", "http://127.0.0.1:8765/mcp", "x",
+                                      &error));
+    CHECK(!error.empty());
+    remove_file(path);
+}
+
+TEST(setup_knows_which_clients_can_reach_an_http_endpoint) {
+    // If this flips by accident, `setup --shared` either writes entries a
+    // client ignores or needlessly keeps one on stdio with its own grant.
+    bool saw_http = false, saw_stdio_only = false;
+    for (const auto& t : mcp::client_targets()) {
+        if (t.id == "claude-code" || t.id == "vscode" || t.id == "cursor") {
+            char note[128];
+            std::snprintf(note, sizeof(note), "%s should support http", t.id.c_str());
+            ::test::report(t.supports_http, "client supports http", __FILE__, __LINE__, note);
+            saw_http = true;
+        }
+        if (t.id == "claude-desktop" || t.id == "codex") {
+            char note[128];
+            std::snprintf(note, sizeof(note), "%s should stay stdio-only", t.id.c_str());
+            ::test::report(!t.supports_http, "client is stdio-only", __FILE__, __LINE__, note);
+            saw_stdio_only = true;
+        }
+    }
+    CHECK(saw_http);
+    CHECK(saw_stdio_only);
+}

@@ -212,6 +212,19 @@ private:
             }
         }
 
+        // Streamable HTTP clients open a GET to listen for server-initiated
+        // messages. This transport has no stream to offer, and the spec's
+        // answer for that is 405 - not the generic 400 an empty body would
+        // otherwise produce, which reads as "your request was malformed" and
+        // sends a client author looking for a fault that is not theirs.
+        const std::string method = headers.substr(0, headers.find(' '));
+        if (method == "GET" || method == "DELETE") {
+            respond(405,
+                    "{\"error\":\"this server offers no event stream; POST JSON-RPC "
+                    "to this endpoint instead\"}");
+            return false;
+        }
+
         body = request.substr(header_end + 4);
         if (body.empty()) return false;
         return check_routing_headers(headers, body);
@@ -340,7 +353,8 @@ private:
         os << "HTTP/1.1 " << status << (status == 200 ? " OK" : " Error") << "\r\n"
            << "Content-Type: application/json\r\n"
            << "MCP-Protocol-Version: " << kModernProtocol << "\r\n"
-           << "Content-Length: " << body.size() << "\r\n"
+           << (status == 405 ? "Allow: POST\r\n" : "") << "Content-Length: " << body.size()
+           << "\r\n"
            << "Connection: close\r\n"
            << "\r\n"
            << body;
