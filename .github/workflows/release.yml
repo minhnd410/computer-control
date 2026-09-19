@@ -117,10 +117,19 @@ jobs:
           ls -la dist
           # --verify-tag refuses to invent a tag that does not exist, and the
           # notes are generated from the commits since the previous release.
-          gh release create "$TAG" dist/* \
-            --title "$TAG" \
-            --verify-tag \
-            --generate-notes
+          #
+          # Re-running a release must not fail on "already exists": that is how
+          # a workflow_dispatch retry after a transient runner failure gets
+          # stuck, and it is also how the Homebrew step below never runs.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists; replacing its assets"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "$TAG" \
+              --verify-tag \
+              --generate-notes
+          fi
 
       # Publishing the formula is what makes `brew install` work; doing it by
       # hand means the tap silently lags the release. The checksums come from
