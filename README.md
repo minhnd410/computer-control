@@ -54,12 +54,12 @@ $ computer-control-mcp setup
 
 Found these MCP clients. Which should get computer-control?
 
-  1) Claude Code
-  2) Claude Desktop
-  3) VS Code / GitHub Copilot
-  4) Codex CLI
+  > [x] Claude Code
+    [x] Claude Desktop
+    [x] VS Code / GitHub Copilot
+    [x] Codex CLI
 
-Enter numbers separated by spaces, 'a' for all, or Enter to skip:
+  space toggles, a all, enter confirms, esc cancels
 ```
 
 It only ever touches its own entry, so the servers already in those files are

@@ -22,8 +22,10 @@
 #define cc_isatty _isatty
 #define cc_fileno _fileno
 #else
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <termios.h>
 #include <unistd.h>
 #define cc_isatty isatty
 #define cc_fileno fileno
@@ -561,6 +563,118 @@ bool configure_client_bridge(const ClientTarget& t, const std::string& server_na
 
 namespace {
 
+// An arrow-key checkbox picker.
+//
+// Typing "1 3 4" works but makes you hold the mapping in your head while you
+// read the list. This shows the state you are choosing.
+//
+// The terminal is put in raw mode to read single keypresses, which is the
+// dangerous part: leaving it that way gives the user a shell with no echo and
+// no line editing, and they have to blind-type `reset`. RawMode restores it
+// from its destructor on every path, and ISIG stays disabled so Ctrl-C arrives
+// as a byte we handle rather than a signal that kills us mid-mode.
+#if !defined(_WIN32)
+class RawMode {
+public:
+    RawMode() {
+        if (::tcgetattr(STDIN_FILENO, &saved_) != 0) return;
+        ok_ = true;
+        termios raw = saved_;
+        raw.c_lflag &= static_cast<tcflag_t>(~(ICANON | ECHO | ISIG));
+        raw.c_cc[VMIN] = 1;
+        raw.c_cc[VTIME] = 0;
+        ::tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    }
+    ~RawMode() {
+        if (ok_) ::tcsetattr(STDIN_FILENO, TCSAFLUSH, &saved_);
+    }
+    RawMode(const RawMode&) = delete;
+    RawMode& operator=(const RawMode&) = delete;
+    bool ok() const { return ok_; }
+
+private:
+    termios saved_{};
+    bool ok_ = false;
+};
+
+// Returns the chosen indices, or nullopt when the picker cannot run (no raw
+// mode, a terminal that cannot do escapes) so the caller falls back.
+std::optional<std::vector<std::size_t>> pick_clients(
+    const std::vector<const ClientTarget*>& found) {
+    const char* term = std::getenv("TERM");
+    if (term && std::string(term) == "dumb") return std::nullopt;
+
+    RawMode raw;
+    if (!raw.ok()) return std::nullopt;
+
+    // Everything starts selected: the common case is wanting all of them, and
+    // an empty list would make Enter mean "do nothing", which reads as broken.
+    std::vector<bool> chosen(found.size(), true);
+    std::size_t cursor = 0;
+    bool first = true;
+
+    auto draw = [&]() {
+        if (!first) std::cout << "\x1b[" << (found.size() + 2) << "A";
+        first = false;
+        std::cout << "\x1b[?25l";  // hide the cursor while redrawing
+        for (std::size_t i = 0; i < found.size(); ++i) {
+            std::cout << "\x1b[2K" << (i == cursor ? "  \x1b[36m>\x1b[0m " : "    ")
+                      << (chosen[i] ? "[x] " : "[ ] ") << found[i]->name << "\n";
+        }
+        std::cout << "\x1b[2K\n"
+                  << "\x1b[2K  \x1b[2mspace toggles, a all, enter confirms, esc cancels\x1b[0m\n"
+                  << std::flush;
+    };
+
+    draw();
+    for (;;) {
+        char c = 0;
+        if (::read(STDIN_FILENO, &c, 1) != 1) break;
+
+        if (c == '\r' || c == '\n') break;
+        if (c == 3 || c == 'q') {  // Ctrl-C
+            std::cout << "\x1b[?25h" << std::flush;
+            return std::vector<std::size_t>{};
+        }
+        if (c == ' ') {
+            chosen[cursor] = !chosen[cursor];
+        } else if (c == 'a' || c == 'A') {
+            const bool all = std::all_of(chosen.begin(), chosen.end(), [](bool b) { return b; });
+            std::fill(chosen.begin(), chosen.end(), !all);
+        } else if (c == 'j') {
+            cursor = (cursor + 1) % found.size();
+        } else if (c == 'k') {
+            cursor = (cursor + found.size() - 1) % found.size();
+        } else if (c == 27) {
+            // Either a bare Escape, or the start of an arrow sequence. VMIN=1
+            // blocks, so peek with a short poll rather than waiting forever on
+            // a lone Escape keypress.
+            char seq[2] = {0, 0};
+            fd_set set;
+            FD_ZERO(&set);
+            FD_SET(STDIN_FILENO, &set);
+            timeval tv{0, 50000};
+            if (::select(STDIN_FILENO + 1, &set, nullptr, nullptr, &tv) <= 0) {
+                std::cout << "\x1b[?25h" << std::flush;
+                return std::vector<std::size_t>{};
+            }
+            if (::read(STDIN_FILENO, &seq[0], 1) != 1) break;
+            if (::read(STDIN_FILENO, &seq[1], 1) != 1) break;
+            if (seq[0] == '[' && seq[1] == 'B') cursor = (cursor + 1) % found.size();
+            if (seq[0] == '[' && seq[1] == 'A') cursor = (cursor + found.size() - 1) % found.size();
+        }
+        draw();
+    }
+
+    std::cout << "\x1b[?25h" << std::flush;
+    std::vector<std::size_t> out;
+    for (std::size_t i = 0; i < chosen.size(); ++i) {
+        if (chosen[i]) out.push_back(i);
+    }
+    return out;
+}
+#endif
+
 bool interactive() {
     return cc_isatty(cc_fileno(stdin)) && cc_isatty(cc_fileno(stdout));
 }
@@ -679,26 +793,42 @@ int run_setup(const SetupOptions& opts_in) {
                       << "  computer-control-mcp setup --client " << found.front()->id << "\n\n";
         } else {
             std::cout << "Found these MCP clients. Which should get computer-control?\n\n";
-            for (std::size_t i = 0; i < found.size(); ++i) {
-                std::cout << "  " << (i + 1) << ") " << found[i]->name << "\n";
-            }
-            std::cout << "\nEnter numbers separated by spaces, 'a' for all, or Enter to skip: "
-                      << std::flush;
 
-            std::string line;
-            std::getline(std::cin, line);
-            if (line == "a" || line == "A" || line == "all") {
-                chosen = found;
-            } else {
-                std::istringstream ss(line);
-                int n = 0;
-                while (ss >> n) {
-                    if (n >= 1 && n <= static_cast<int>(found.size())) {
-                        chosen.push_back(found[static_cast<std::size_t>(n - 1)]);
+            bool picked = false;
+#if !defined(_WIN32)
+            if (auto selection = pick_clients(found)) {
+                for (std::size_t i : *selection) chosen.push_back(found[i]);
+                picked = true;
+            }
+#endif
+            if (!picked) {
+                // No raw mode, or a terminal that cannot do escapes. Typing
+                // numbers is worse but it always works.
+                for (std::size_t i = 0; i < found.size(); ++i) {
+                    std::cout << "  " << (i + 1) << ") " << found[i]->name << "\n";
+                }
+                std::cout << "\nEnter numbers separated by spaces, 'a' for all, or Enter to "
+                             "skip: "
+                          << std::flush;
+
+                std::string line;
+                std::getline(std::cin, line);
+                if (line == "a" || line == "A" || line == "all") {
+                    chosen = found;
+                } else {
+                    std::istringstream ss(line);
+                    int n = 0;
+                    while (ss >> n) {
+                        if (n >= 1 && n <= static_cast<int>(found.size())) {
+                            chosen.push_back(found[static_cast<std::size_t>(n - 1)]);
+                        }
                     }
                 }
             }
             std::cout << "\n";
+            if (chosen.empty()) {
+                std::cout << "Nothing selected; no client configs were changed.\n\n";
+            }
         }
     }
 
@@ -723,6 +853,13 @@ int run_setup(const SetupOptions& opts_in) {
     std::string token;
     const int port = opts.port;
     const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/mcp";
+
+    // Selecting nothing means "not now". Installing a background service that
+    // can drive the desktop, for zero clients, is not what that asked for.
+    if (chosen.empty() && opts.clients.empty()) {
+        std::cout << "Run `computer-control-mcp setup` again when you want to connect a client.\n";
+        return 0;
+    }
 
     if (shared) {
         const AgentStatus before = agent_status();
