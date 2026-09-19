@@ -30,11 +30,18 @@ winget install minhnd410.computer-control
 computer-control-mcp setup
 ```
 
-### Any platform — download
+### No package manager
 
-Grab the archive for your platform from
-[Releases](https://github.com/minhnd410/computer-control/releases), verify the
-checksum beside it, and put `computer-control-mcp` on your `PATH`.
+```bash
+curl -fsSL https://raw.githubusercontent.com/minhnd410/computer-control/main/packaging/scripts/install.sh | sh
+```
+```powershell
+irm https://raw.githubusercontent.com/minhnd410/computer-control/main/packaging/scripts/install.ps1 | iex
+```
+
+Both verify the published SHA256 before installing, and abort on a mismatch.
+Or take the archive straight from
+[Releases](https://github.com/minhnd410/computer-control/releases).
 
 ### Building it yourself
 

@@ -7,6 +7,7 @@ is the last resort, not the default.
 
 - [Homebrew](#homebrew-macos-and-linux) — macOS and Linux
 - [winget](#winget-windows) — Windows
+- [One-line install](#one-line-install) — anywhere, no package manager
 - [Download an archive](#download-an-archive) — anywhere
 - [Build from source](#build-from-source) — contributors, or a platform with no archive
 - [After installing](#after-installing)
@@ -53,6 +54,33 @@ that input aimed at a window running at a higher integrity level — an
 installer, Task Manager, anything launched as administrator — is silently
 discarded by UIPI. If a click into such a window appears to do nothing, restart
 the server elevated. `computer-control-mcp --doctor` reports which case you are in.
+
+## One-line install
+
+No package manager, no toolchain:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/minhnd410/computer-control/main/packaging/scripts/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/minhnd410/computer-control/main/packaging/scripts/install.ps1 | iex
+```
+
+Both fetch the archive for your platform, **verify its SHA256 against the
+checksum published beside it**, and install the binary. A mismatch aborts; it
+does not warn and continue. That matters more than usual here — piping a script
+into a shell to install something that can drive your desktop is worth doing
+carefully, and you should read the script before you run it.
+
+Neither needs root. The shell script installs to `/usr/local` when that is
+writable, uses `sudo` for the copy alone when it is not, and falls back to
+`~/.local` when there is no `sudo`. The PowerShell script installs under
+`%LOCALAPPDATA%` and edits only your user `PATH`. Override with `CC_PREFIX`,
+and pin a version with `CC_VERSION=v0.8.1`.
+
+Homebrew and winget are still the better choice where you have them: they know
+how to upgrade and uninstall, and these scripts do not.
 
 ## Download an archive
 
@@ -225,7 +253,7 @@ has the config shape and the transport options.
 | | Status |
 |---|---|
 | `uvx` | Nothing published to PyPI, and there is no Python in this project to publish. |
-| `curl \| sh` | Script exists in `packaging/scripts/install.sh`; Homebrew covers the same platforms better. |
+
 | Docker | Removed. A container cannot reach the host's display server, so it could never control a real desktop — it was a sandbox presented as an install method. |
 | Linux arm64 archive | No CI runner for it yet. Build from source. |
 

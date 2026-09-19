@@ -1,14 +1,18 @@
 #!/usr/bin/env sh
-# computer-control installer.
+# computer-control installer for macOS and Linux.
 #
 #   curl -fsSL https://raw.githubusercontent.com/minhnd410/computer-control/main/packaging/scripts/install.sh | sh
 #
 # POSIX sh on purpose: this has to run under dash, busybox ash and macOS's
 # ancient bash without anyone thinking about it.
+#
+# Environment:
+#   CC_PREFIX    install root, default /usr/local (or ~/.local when that is
+#                not writable and sudo is unavailable)
+#   CC_VERSION   a tag such as v0.8.1, default the latest release
 set -eu
 
 REPO="minhnd410/computer-control"
-PREFIX="${CC_PREFIX:-/usr/local}"
 VERSION="${CC_VERSION:-latest}"
 
 say()  { printf '%s\n' "$*"; }
@@ -19,102 +23,108 @@ need() {
     command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed"
 }
 
-detect_target() {
+target() {
     os=$(uname -s)
     arch=$(uname -m)
     case "$os" in
         Darwin) os=macos ;;
         Linux)  os=linux ;;
-        *) die "unsupported OS '$os'. Windows users: use winget, or see the README." ;;
+        *) die "unsupported OS '$os'. Windows: use install.ps1 or winget." ;;
     esac
     case "$arch" in
         arm64|aarch64) arch=arm64 ;;
         x86_64|amd64)  arch=x86_64 ;;
         *) die "unsupported architecture '$arch'" ;;
     esac
+    if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
+        die "no prebuilt archive for Linux on arm64 yet.
+       Build from source: https://github.com/$REPO/blob/main/docs/install.md"
+    fi
     printf '%s-%s' "$os" "$arch"
 }
 
-# Building is the fallback when there is no release asset, which is the normal
-# case today. It is slower but always correct, and the user is told which path
-# was taken rather than left guessing.
-build_from_source() {
-    say "No prebuilt archive for $1; building from source."
-    need git
-    need cmake
-    command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || \
-        command -v clang >/dev/null 2>&1 || die "no C++ compiler found"
-
-    if [ "$(uname -s)" = "Linux" ]; then
-        # These are the four that actually break the build when missing; the
-        # error from CMake otherwise names a header, not a package.
-        missing=""
-        for pkg in X11 Xtst Xrandr Xfixes; do
-            if ! ls /usr/include/X11 >/dev/null 2>&1; then missing="libx11-dev"; break; fi
-        done
-        [ -n "$missing" ] && warn "X11 headers appear to be missing. On Debian/Ubuntu:
-    sudo apt install build-essential cmake libx11-dev libxtst-dev libxrandr-dev libxfixes-dev zlib1g-dev"
+# Where to put it, and whether that needs sudo. Choosing ~/.local over asking
+# for a password is the friendlier default for a one-line installer.
+choose_prefix() {
+    if [ -n "${CC_PREFIX:-}" ]; then
+        printf '%s' "$CC_PREFIX"
+        return
     fi
-
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' EXIT
-    say "Cloning into $tmp ..."
-    git clone --depth 1 "https://github.com/$REPO.git" "$tmp/src" >/dev/null 2>&1 \
-        || die "clone failed"
-    cmake -S "$tmp/src" -B "$tmp/build" -DCMAKE_BUILD_TYPE=Release >/dev/null \
-        || die "cmake configure failed"
-    cmake --build "$tmp/build" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" >/dev/null \
-        || die "build failed"
-    install_files "$tmp/build"
+    if [ -w /usr/local/bin ] 2>/dev/null; then
+        printf '/usr/local'
+    elif command -v sudo >/dev/null 2>&1 && [ -d /usr/local/bin ]; then
+        printf '/usr/local'
+    else
+        printf '%s/.local' "$HOME"
+    fi
 }
 
-install_files() {
-    src="$1"
-    bindir="$PREFIX/bin"
-    # Only escalate if we have to, and say so before doing it.
-    if [ -w "$bindir" ] 2>/dev/null || mkdir -p "$bindir" 2>/dev/null; then
-        sudo_cmd=""
+sha256_of() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
     else
-        warn "$bindir is not writable; using sudo."
-        need sudo
-        sudo_cmd="sudo"
-        $sudo_cmd mkdir -p "$bindir"
+        die "need shasum or sha256sum to verify the download"
     fi
-
-    binary=computer-control-mcp
-    [ -f "$src/$binary" ] || die "expected $src/$binary after build"
-    $sudo_cmd install -m 0755 "$src/$binary" "$bindir/$binary"
-    say "Installed $binary to $bindir"
-}
-
-fetch_release() {
-    target="$1"
-    need curl
-    need tar
-    if [ "$VERSION" = "latest" ]; then
-        url="https://github.com/$REPO/releases/latest/download/computer-control-$target.tar.gz"
-    else
-        url="https://github.com/$REPO/releases/download/$VERSION/computer-control-$target.tar.gz"
-    fi
-
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' EXIT
-    # A missing release must not look like a network failure.
-    if ! curl -fsSL "$url" -o "$tmp/archive.tar.gz" 2>/dev/null; then
-        return 1
-    fi
-    tar -xzf "$tmp/archive.tar.gz" -C "$tmp" || die "archive is corrupt"
-    install_files "$tmp"
-    return 0
 }
 
 main() {
-    target=$(detect_target)
-    say "computer-control installer - target $target, prefix $PREFIX"
+    need curl
+    need tar
 
-    if ! fetch_release "$target"; then
-        build_from_source "$target"
+    TARGET=$(target)
+    PREFIX=$(choose_prefix)
+    ARCHIVE="computer-control-$TARGET.tar.gz"
+
+    if [ "$VERSION" = "latest" ]; then
+        BASE="https://github.com/$REPO/releases/latest/download"
+    else
+        BASE="https://github.com/$REPO/releases/download/$VERSION"
     fi
+
+    TMP=$(mktemp -d)
+    trap 'rm -rf "$TMP"' EXIT
+
+    say "computer-control: $TARGET, installing to $PREFIX/bin"
+
+    curl -fsSL "$BASE/$ARCHIVE" -o "$TMP/$ARCHIVE" \
+        || die "could not download $BASE/$ARCHIVE
+       Check https://github.com/$REPO/releases for what is published."
+
+    # Every release publishes a .sha256 beside the archive. Skipping this on a
+    # binary that can drive the desktop would be indefensible, so a missing or
+    # mismatched checksum aborts rather than warns.
+    curl -fsSL "$BASE/$ARCHIVE.sha256" -o "$TMP/$ARCHIVE.sha256" \
+        || die "no checksum published for $ARCHIVE; refusing to install unverified"
+
+    EXPECTED=$(cut -d' ' -f1 < "$TMP/$ARCHIVE.sha256")
+    ACTUAL=$(sha256_of "$TMP/$ARCHIVE")
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+        die "checksum mismatch for $ARCHIVE
+       expected $EXPECTED
+       got      $ACTUAL
+       Do not use this download."
+    fi
+    say "  checksum ok"
+
+    tar -xzf "$TMP/$ARCHIVE" -C "$TMP" || die "archive is corrupt"
+    BIN="$TMP/computer-control/computer-control-mcp"
+    [ -f "$BIN" ] || die "unexpected archive layout: no computer-control/computer-control-mcp"
+
+    SUDO=""
+    if [ ! -w "$PREFIX/bin" ] 2>/dev/null; then
+        if [ -d "$PREFIX/bin" ] || ! mkdir -p "$PREFIX/bin" 2>/dev/null; then
+            command -v sudo >/dev/null 2>&1 || die "$PREFIX/bin is not writable and sudo is unavailable.
+       Set CC_PREFIX to somewhere you own, e.g. CC_PREFIX=\$HOME/.local"
+            say "  $PREFIX/bin needs root; using sudo for the copy only"
+            SUDO="sudo"
+            $SUDO mkdir -p "$PREFIX/bin"
+        fi
+    fi
+
+    $SUDO install -m 0755 "$BIN" "$PREFIX/bin/computer-control-mcp"
+    say "  installed $($PREFIX/bin/computer-control-mcp --version | head -1)"
 
     case ":$PATH:" in
         *":$PREFIX/bin:"*) ;;
@@ -123,16 +133,12 @@ $PREFIX/bin is not on your PATH. Add it:
     echo 'export PATH=\"$PREFIX/bin:\$PATH\"' >> ~/.profile" ;;
     esac
 
-    say ""
-    say "Next:"
-    say "    computer-control-mcp --request-permissions   # grant what it needs"
-    say "    computer-control-mcp --doctor                # full capability report"
-    if [ "$(uname -s)" = "Darwin" ]; then
-        say ""
-        say "On macOS the Accessibility grant follows the *responsible process*, so a"
-        say "binary run from a terminal is attributed to the terminal and never appears"
-        say "in System Settings. \`--doctor\` explains what to do about it."
-    fi
+    say "
+Next:
+    computer-control-mcp setup
+
+That registers the server with the MCP clients on this machine and walks
+through the permissions it needs."
 }
 
 main "$@"
