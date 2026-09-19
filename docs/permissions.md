@@ -79,16 +79,21 @@ Codex is the one client that reads its token from the environment rather than it
 export CC_AUTH_TOKEN=$(cat ~/.config/computer-control/token)
 ```
 
-### If you decide not to grant one
+### How the walkthrough works
 
-`setup` waits for each permission rather than assuming, but waiting is not the
-same as insisting. Press **enter** to skip the one it is waiting on and move to
-the next, or **Ctrl-C** to stop the walkthrough entirely — it will not go on to
-ask about the rest. Either way it reloads the service, tells you what ended up
-ungranted, and exits non-zero so a script can notice.
+`setup` takes one permission at a time. For each it prints what to do, opens
+the right pane, and waits for you to press enter — it does not poll, watch or
+time out. When you have done both it reloads the service and reports what is
+actually granted.
 
-Skipping is not destructive. Run `setup` again, or grant it in System Settings
-and `setup --restart`, whenever you want.
+Pressing enter without granting is fine; it just moves on, and the report at
+the end says what is missing. Nothing is destructive: run `setup` again, or
+grant it later and `setup --restart`.
+
+**Remove the old rows.** Each version you have installed left its own
+`computer-control-mcp` entry, all with the same name and no way to tell them
+apart in the UI. Only the newest is real — the rest point at paths that no
+longer exist. Clear them out with **−** and add the one `setup` prints.
 
 Tools that need a permission you declined will fail with a message naming it,
 rather than appearing to work.

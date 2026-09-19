@@ -928,106 +928,6 @@ void service_request(const std::string& name) {
     (void)devices::exec("curl", args, std::chrono::milliseconds{25000});
 }
 
-// Interrupted with Ctrl-C. A flag rather than exiting inside the handler, so
-// the loop unwinds normally and the summary still prints - quitting halfway
-// through leaves someone with no idea which permissions actually took.
-std::atomic<bool> g_interrupted{false};
-
-void on_interrupt(int) {
-    g_interrupted = true;
-}
-
-enum class WaitOutcome { Granted, Skipped, TimedOut, Interrupted, ServiceDown };
-
-// Waits for one permission, watching the clock and stdin at the same time.
-WaitOutcome wait_for_permission(const std::string& name, const std::string& label, int seconds) {
-    const char* spin = "|/-\\";
-    auto previous = std::signal(SIGINT, on_interrupt);
-    g_interrupted = false;
-
-    WaitOutcome outcome = WaitOutcome::TimedOut;
-    int unreachable = 0;
-    for (int i = 0; i < seconds * 4; ++i) {
-        if (g_interrupted) {
-            outcome = WaitOutcome::Interrupted;
-            break;
-        }
-        const std::string state = service_permission_state(name);
-        if (state == "granted") {
-            outcome = WaitOutcome::Granted;
-            break;
-        }
-
-        // "unknown" means the service did not answer, which is a different
-        // problem from "not granted" and needs saying. Spinning "waiting for
-        // you to allow it" at someone whose service has died is the kind of
-        // message that wastes an afternoon.
-        if (state == "unknown") {
-            ++unreachable;
-            if (unreachable > 24) {  // ~6s of silence
-                outcome = WaitOutcome::ServiceDown;
-                break;
-            }
-        } else {
-            unreachable = 0;
-        }
-
-        const std::string note = unreachable > 0 ? yellow("service not answering...")
-                                                 : dim("waiting... press enter to skip");
-        if (color_enabled()) {
-            std::cout << "\r\x1b[2K  " << cyan(std::string(1, spin[i % 4])) << " " << label << "  "
-                      << note << std::flush;
-        } else if (i == 0) {
-            std::cout << "  .. " << label << "  waiting, press enter to skip\n" << std::flush;
-        }
-
-#if !defined(_WIN32)
-        // Poll stdin alongside the clock, so someone who has decided not to
-        // grant it is not held for three minutes by a loop that only watches
-        // the permission.
-        fd_set set;
-        FD_ZERO(&set);
-        FD_SET(STDIN_FILENO, &set);
-        timeval tv{0, 250000};
-        if (::select(STDIN_FILENO + 1, &set, nullptr, nullptr, &tv) > 0) {
-            std::string ignored;
-            std::getline(std::cin, ignored);
-            outcome = WaitOutcome::Skipped;
-            break;
-        }
-#else
-        std::this_thread::sleep_for(std::chrono::milliseconds{250});
-#endif
-    }
-
-    std::signal(SIGINT, previous);
-
-    std::cout << "\r\x1b[2K  ";
-    switch (outcome) {
-        case WaitOutcome::Granted:
-            std::cout << green(mark_ok()) << " " << label << "  " << dim("granted") << "\n";
-            break;
-        case WaitOutcome::Skipped:
-            std::cout << yellow(mark_bad()) << " " << label << "  " << yellow("skipped") << "\n";
-            break;
-        case WaitOutcome::Interrupted:
-            std::cout << yellow(mark_bad()) << " " << label << "  " << yellow("cancelled") << "\n";
-            break;
-        case WaitOutcome::TimedOut:
-            std::cout << yellow(mark_bad()) << " " << label << "  "
-                      << yellow("not granted after " + std::to_string(seconds) + "s") << "\n";
-            break;
-        case WaitOutcome::ServiceDown:
-            std::cout << red(mark_bad()) << " " << label << "  "
-                      << red("the service stopped answering") << "\n"
-                      << "    " << dim("this is not about the permission:") << "\n"
-                      << "    " << cyan("computer-control-mcp setup --status") << "\n";
-            break;
-    }
-    std::cout << std::flush;
-    return outcome;
-}
-
 }  // namespace
 
 bool guide_permissions(bool assume_yes) {
@@ -1043,20 +943,12 @@ bool guide_permissions(bool assume_yes) {
          Permission::ScreenRecording},
     };
 
-    // The path to add with + is the service's, not this process's. Printing
-    // the one you happen to be running is how someone grants the wrong binary
-    // and is left wondering why nothing changed.
-    // Ask the service what it thinks it is. The plist may name a symlink,
-    // which macOS resolves before TCC sees it - so the row in System Settings
-    // is the resolved path, and printing the symlink would send someone
-    // looking for an entry under a name that is not there.
+    // The path to add is the service's own, not this process's, and not the
+    // symlink in the plist: macOS resolves symlinks before TCC sees them, so
+    // the row in System Settings is the resolved path.
     std::string grantee = service_executable();
-    if (grantee.empty()) {
-        const AgentStatus agent = agent_status();
-        grantee = agent.binary.empty() ? executable_path() : agent.binary;
-    }
+    if (grantee.empty()) grantee = executable_path();
 
-    bool all = true;
     for (const Step& step : steps) {
         if (service_permission_state(step.id) == "granted") {
             std::cout << "  " << green(mark_ok()) << " " << step.label << "  " << dim("granted")
@@ -1064,36 +956,33 @@ bool guide_permissions(bool assume_yes) {
             continue;
         }
 
-        // Ask first, then describe. The request is what registers the service
-        // in the list; describing it beforehand promised a dialog that had not
-        // been asked for yet.
-        //
-        // And do not promise a dialog at all. A launchd agent that is a plain
-        // executable rather than an app bundle usually gets no prompt - macOS
-        // adds a disabled row to the list instead - so the reliable
-        // instruction is "open the pane and switch it on", which works either
-        // way.
+        std::cout << "\n  " << bold(step.label) << "\n"
+                  << "    1. In the window that opens, remove every existing\n"
+                  << "       " << bold("computer-control-mcp") << dim(" row with the ")
+                  << bold("\u2212") << dim(" button.") << "\n"
+                  << dim("       Each version left one behind and they all look identical;\n"
+                         "       only the one below is real.")
+                  << "\n"
+                  << "    2. Add this with " << bold("+") << " and switch it on:\n"
+                  << "       " << cyan(grantee) << "\n"
+                  << dim("       (\u2318\u21e7G in the file picker lets you paste a path.)")
+                  << "\n";
+
         service_request(step.id);
         (void)open_permission_settings(step.permission);
 
-        std::cout << "\n  " << bold(step.label) << "\n"
-                  << "    Switch on " << bold("computer-control-mcp") << " under\n"
-                  << "    " << cyan(std::string("Privacy & Security \u203a ") + step.pane) << "\n"
-                  << dim("    The pane should be open. If the entry is missing, add it with + :\n")
-                  << dim("      " + grantee) << "\n"
-                  << dim("    A dialog may also appear; either way works.") << "\n";
-        if (!assume_yes) {
-            std::cout << dim("    Press enter to skip, Ctrl-C to stop.") << "\n";
+        if (!assume_yes && interactive_terminal_impl()) {
+            std::cout << "\n    " << bold("Press enter when you have done that.") << " "
+                      << std::flush;
+            std::string ignored;
+            std::getline(std::cin, ignored);
         }
-
-        const WaitOutcome outcome = wait_for_permission(step.id, step.label, 180);
-        if (outcome != WaitOutcome::Granted) all = false;
-        // Cancelling means cancelling, not "ask me about the next one too".
-        // A dead service is the same: the next permission cannot be checked
-        // either, so asking about it would only produce a second false report.
-        if (outcome == WaitOutcome::Interrupted || outcome == WaitOutcome::ServiceDown) break;
     }
-    return all;
+
+    // Backends are built when a session starts, so a grant only reaches one
+    // after a reload. Check afterwards rather than before, or the report is of
+    // the state before anything was granted.
+    return true;
 }
 
 int run_setup(const SetupOptions& opts_in) {
@@ -1359,7 +1248,7 @@ int run_setup(const SetupOptions& opts_in) {
         if (shared) {
             // The service is the process that needs these, and it is not this
             // one - so the prompts are raised there and this only watches.
-            const bool all = guide_permissions(opts.assume_yes);
+            guide_permissions(opts.assume_yes);
 
             // Backends are built when a session starts, so a grant that
             // arrives afterwards does not reach one that is already running.
@@ -1369,13 +1258,23 @@ int run_setup(const SetupOptions& opts_in) {
             std::string token_again;
             if (auto st = install_agent(opts.command, port, &token_again); st) {
                 std::cout << "  " << green(mark_ok()) << " service reloaded"
-                          << dim("  (a grant is read when the process starts)") << "\n";
+                          << dim("  (a grant is read when the process starts)") << "\n\n";
             }
 
+            // Report what is true after the reload, which is the only moment
+            // the answer is meaningful.
+            bool all = true;
+            for (const char* id : {"accessibility", "screen_recording"}) {
+                const std::string state = service_permission_state(id);
+                const bool ok = state == "granted";
+                if (!ok) all = false;
+                std::cout << "  " << (ok ? green(mark_ok()) : yellow(mark_bad())) << " " << id
+                          << "  " << (ok ? dim(state) : yellow(state)) << "\n";
+            }
             if (!all) {
-                std::cout << "\n  " << yellow("Something is still not granted.") << "\n"
-                          << dim("    computer-control-mcp --doctor   shows what the service "
-                                 "sees")
+                std::cout << "\n"
+                          << dim("  Not granted yet. Run `computer-control-mcp setup` again, or\n"
+                                 "  grant it and then `computer-control-mcp setup --restart`.")
                           << "\n";
             }
 
