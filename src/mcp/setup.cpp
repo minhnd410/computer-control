@@ -761,6 +761,20 @@ std::optional<std::vector<std::size_t>> pick_clients(
 }
 #endif
 
+bool interactive_terminal_impl();
+
+}  // namespace
+
+bool interactive_terminal() {
+    return interactive_terminal_impl();
+}
+
+namespace {
+
+bool interactive_terminal_impl() {
+    return cc_isatty(cc_fileno(stdin)) && cc_isatty(cc_fileno(stdout));
+}
+
 bool interactive() {
     return cc_isatty(cc_fileno(stdin)) && cc_isatty(cc_fileno(stdout));
 }

@@ -79,6 +79,29 @@ Codex is the one client that reads its token from the environment rather than it
 export CC_AUTH_TOKEN=$(cat ~/.config/computer-control/token)
 ```
 
+### Two things that look like bugs and are not
+
+**A grant is read when the process starts.** Enabling the checkbox while the
+service is already running changes nothing until it restarts, and until then
+`--doctor` reports `denied` with the checkbox visibly on. That is the likelier
+explanation once you have already been to System Settings, so `--doctor` offers
+to restart and re-check before sending you back there.
+
+```bash
+computer-control-mcp setup --restart
+```
+
+**Every upgrade adds a new entry.** The released binaries are not code-signed,
+so a program's TCC identity is its path plus its code hash. Homebrew installs
+each version to its own `Cellar/computer-control/<version>/` path, so after an
+upgrade macOS sees a program it has never met, adds a fresh row, and the
+previous row points at a path that no longer exists. Delete the old ones; they
+do nothing.
+
+This is the concrete cost of shipping unsigned. A Developer ID certificate
+would keep the identity stable across versions and the grant would survive
+upgrades — see the signing section of [install](install.md).
+
 **On Windows and Linux none of this applies.** There is no launchd, and a stdio child needs no grant in the first place, so clients launch the server directly.
 
 `CGDisplayCreateImage` and `CGWindowListCreateImage` are **removed**, not merely deprecated, in the macOS 15 SDK. Capture uses ScreenCaptureKit, which needs macOS 12.3+.

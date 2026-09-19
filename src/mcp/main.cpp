@@ -297,13 +297,46 @@ alone.
                     // --request-permissions, which from a terminal asks on
                     // behalf of the terminal - the exact confusion this whole
                     // branch exists to stop. Say what actually works here.
-                    const bool denied = perms.find("denied") != std::string::npos;
+                    bool denied = perms.find("denied") != std::string::npos;
                     if (denied) {
-                        std::cout << "To fix, in System Settings > Privacy & Security, enable\n"
-                                  << "computer-control-mcp under Accessibility and under Screen &\n"
-                                  << "System Audio Recording (add it with + if it is missing),\n"
-                                  << "then reload the service so it reads the new grant:\n"
+                        // A grant is read at launch, so a service older than
+                        // the grant reports denied even though the checkbox is
+                        // on. That is indistinguishable from "not granted" in
+                        // the output, and it is the likelier of the two once
+                        // someone has already been to System Settings - so try
+                        // it before telling them to go back there.
+                        std::cout << "A grant is read when the service starts, so this also "
+                                     "looks like\nthis if you granted it while the service was "
+                                     "already running.\n\n";
+
+                        bool restart = false;
+                        if (cc::mcp::interactive_terminal()) {
+                            std::cout << "Restart it and check again? [Y/n] " << std::flush;
+                            std::string answer;
+                            std::getline(std::cin, answer);
+                            restart = answer.empty() || answer[0] == 'y' || answer[0] == 'Y';
+                        }
+                        if (restart) {
+                            cc::mcp::SetupOptions ropts;
+                            ropts.restart = true;
+                            ropts.command = cc::executable_path();
+                            (void)cc::mcp::run_setup(ropts);
+                            const std::string again = cc::mcp::ask_service("permissions");
+                            if (!again.empty()) {
+                                std::cout << "\n" << again << "\n";
+                                denied = again.find("denied") != std::string::npos;
+                            }
+                        }
+                    }
+                    if (denied) {
+                        std::cout << "Still denied. In System Settings > Privacy & Security, "
+                                     "enable\ncomputer-control-mcp under Accessibility and under "
+                                     "Screen &\nSystem Audio Recording (add it with + if it is "
+                                     "missing), then:\n"
                                   << "  computer-control-mcp setup --restart\n\n"
+                                  << "Each upgrade installs to a new path with a new code hash, so "
+                                     "macOS\ntreats it as a new program and adds a fresh entry. "
+                                     "The old ones are\ndead and can be removed.\n\n"
                                   << "Running --request-permissions in a terminal will not help:\n"
                                   << "it asks for that terminal, not for the service.\n\n";
                     }

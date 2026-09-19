@@ -56,6 +56,8 @@ AgentStatus agent_status();
 // failure. Used by --doctor, which must report the service's state rather than
 // the state of whatever terminal happened to launch it.
 std::string ask_service(const std::string& tool);
+// Whether stdin and stdout are both a terminal, so a prompt can be answered.
+bool interactive_terminal();
 // Writes the plist, starts the job, and waits for the port to answer.
 Status install_agent(const std::string& command, int port, std::string* token_out);
 Status uninstall_agent();
