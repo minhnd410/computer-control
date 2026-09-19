@@ -20,6 +20,38 @@ OUT=${2:-$HOME/apple-signing/developerID_application.cer}
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
 
+cat >&2 <<'NOTE'
+This does not work for Developer ID certificates, and cannot be made to.
+
+  Team keys reach the provisioning endpoints but top out at the Admin role,
+  and Apple restricts DEVELOPER_ID_APPLICATION to the Account Holder:
+
+      403 FORBIDDEN_ERROR
+      "This operation can only be performed by the Account Holder."
+
+  Individual keys are tied to a person, but Apple documents them as having
+  no access to provisioning endpoints at all - which is where certificates
+  live. There is no key that satisfies both halves.
+
+Create it one of these two ways instead, then run prepare-signing.sh:
+
+  Xcode      Settings > Accounts > your Apple ID > Manage Certificates
+             > + > Developer ID Application. Xcode makes the key and CSR
+             and installs the result. Export it from Keychain Access as a
+             .p12 and pass that to prepare-signing.sh.
+
+  Browser    developer.apple.com > Certificates, Identifiers & Profiles
+             > Certificates > + > Developer ID Application, signed in as
+             the Account Holder. Upload the CSR you already have at
+             ~/apple-signing/devid.csr, download the .cer, and pass it
+             with its key to prepare-signing.sh.
+
+This script is kept because the JWT signing and the request shape are
+correct and useful for the endpoints a Team key *can* reach. Set
+CC_FORCE=1 to run it anyway.
+NOTE
+[ -n "${CC_FORCE:-}" ] || exit 2
+
 [ -f "$CSR" ] || die "no CSR at $CSR (generate one with openssl req -new)"
 : "${ASC_KEY_ID:?set ASC_KEY_ID}"
 : "${ASC_ISSUER_ID:?set ASC_ISSUER_ID}"

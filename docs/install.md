@@ -143,13 +143,32 @@ export ASC_KEY_ID=XXXXXXXXXX
 export ASC_ISSUER_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
 export ASC_KEY=~/Downloads/AuthKey_XXXXXXXXXX.p8
 
-# 3. Mint the certificate over the API - no browser
-./packaging/macos/create-certificate.sh ~/apple-signing/devid.csr
-
-# 4. Turn it into the CI secrets
+# 3. Turn it into the CI secrets
 ./packaging/macos/prepare-signing.sh ~/apple-signing/devid.key \
   ~/apple-signing/developerID_application.cer
 ```
+
+**The certificate itself cannot be created through the App Store Connect API.**
+Team keys reach the provisioning endpoints but top out at the Admin role, and
+Apple restricts `DEVELOPER_ID_APPLICATION` to the Account Holder — the request
+comes back `403 FORBIDDEN_ERROR, "This operation can only be performed by the
+Account Holder."` Individual keys are tied to a person but have no access to
+provisioning endpoints at all, so no key satisfies both halves. Create it one
+of these two ways:
+
+**Xcode** — Settings → Accounts → your Apple ID → Manage Certificates → **+** →
+Developer ID Application. Xcode generates the key and CSR itself and installs
+the result. Export it from Keychain Access (right-click → Export) as a `.p12`,
+then:
+
+```bash
+./packaging/macos/prepare-signing.sh ~/Downloads/signed.p12
+```
+
+**The portal** — developer.apple.com → Certificates, Identifiers & Profiles →
+Certificates → **+** → Developer ID Application, signed in as the Account
+Holder. Upload the CSR from step 1, download the `.cer`, and pass it with its
+key as shown above.
 
 A **paid** Apple Developer Program membership is required. A free account can
 only issue Apple Development certificates, which sign locally but cannot be

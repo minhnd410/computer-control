@@ -11,15 +11,32 @@
 #
 set -euo pipefail
 
-KEY=${1:-}
-CER=${2:-}
+# Two shapes, because there are two ways to get a Developer ID certificate:
+#
+#   prepare-signing.sh key.pem cert.cer    the portal route, where you kept
+#                                          the private key from the CSR
+#   prepare-signing.sh signed.p12          the Xcode route, where the key was
+#                                          generated into the keychain and you
+#                                          exported the pair
+FIRST=${1:-}
+SECOND=${2:-}
 REPO=${CC_REPO:-minhnd410/computer-control}
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
 
-[ -f "$KEY" ] || die "private key not found: $KEY"
-[ -f "$CER" ] || die "certificate not found: $CER"
+[ -n "$FIRST" ] || die "usage: prepare-signing.sh <key> <cert.cer>   |   prepare-signing.sh <signed.p12>"
+[ -f "$FIRST" ] || die "not found: $FIRST"
+
+P12_MODE=0
+case "$FIRST" in
+  *.p12|*.P12) P12_MODE=1 ;;
+esac
+if [ "$P12_MODE" = "0" ]; then
+  KEY=$FIRST
+  CER=$SECOND
+  [ -f "$CER" ] || die "certificate not found: ${CER:-<missing second argument>}"
+fi
 command -v gh >/dev/null || die "gh is not installed"
 gh auth status >/dev/null 2>&1 || die "gh is not authenticated; run: gh auth login"
 
@@ -27,11 +44,34 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
 
-say "Converting the certificate"
-# Apple ships DER; openssl wants PEM for the bundle step.
-openssl x509 -inform DER -in "$CER" -out "$WORK/cert.pem" 2>/dev/null \
-  || cp "$CER" "$WORK/cert.pem"
+if [ "$P12_MODE" = "1" ]; then
+  say "Reading the .p12"
+  printf '   The export password is needed to read the certificate out of it.\n'
+  printf '   It is not stored; the bundle is re-exported with a fresh random one.\n'
+  printf '   password: '
+  stty -echo 2>/dev/null || true
+  read -r IN_PASSWORD
+  stty echo 2>/dev/null || true
+  printf '\n'
 
+  openssl pkcs12 -in "$FIRST" -clcerts -nokeys -legacy -passin "pass:$IN_PASSWORD" \
+      -out "$WORK/cert.pem" 2>/dev/null \
+    || openssl pkcs12 -in "$FIRST" -clcerts -nokeys -passin "pass:$IN_PASSWORD" \
+         -out "$WORK/cert.pem" 2>/dev/null \
+    || die "could not read the certificate (wrong password?)"
+  openssl pkcs12 -in "$FIRST" -nocerts -nodes -legacy -passin "pass:$IN_PASSWORD" \
+      -out "$WORK/key.pem" 2>/dev/null \
+    || openssl pkcs12 -in "$FIRST" -nocerts -nodes -passin "pass:$IN_PASSWORD" \
+         -out "$WORK/key.pem" 2>/dev/null \
+    || die "could not read the private key out of the .p12"
+  KEY=$WORK/key.pem
+else
+  say "Converting the certificate"
+  # Apple ships DER; openssl wants PEM for the bundle step.
+  openssl x509 -inform DER -in "$CER" -out "$WORK/cert.pem" 2>/dev/null \
+    || cp "$CER" "$WORK/cert.pem"
+fi
+# Apple ships DER; openssl wants PEM for the bundle step.
 SUBJECT=$(openssl x509 -in "$WORK/cert.pem" -noout -subject)
 IDENTITY=$(printf '%s' "$SUBJECT" | sed -n 's/.*CN *= *\([^,\/]*\).*/\1/p')
 EXPIRY=$(openssl x509 -in "$WORK/cert.pem" -noout -enddate | cut -d= -f2)
@@ -86,5 +126,7 @@ fi
 
 say "Done"
 printf '   The .p12 and its password existed only in %s, which is now deleted.\n' "$WORK"
-printf '   Keep %s safe: it is the only copy of the private key.\n' "$KEY"
+if [ "$P12_MODE" = "0" ]; then
+    printf '   Keep %s safe: it is the only copy of the private key.\n' "$KEY"
+  fi
 printf '   The next tagged release will sign.\n\n'
