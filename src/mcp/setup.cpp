@@ -937,7 +937,7 @@ void on_interrupt(int) {
     g_interrupted = true;
 }
 
-enum class WaitOutcome { Granted, Skipped, TimedOut, Interrupted };
+enum class WaitOutcome { Granted, Skipped, TimedOut, Interrupted, ServiceDown };
 
 // Waits for one permission, watching the clock and stdin at the same time.
 WaitOutcome wait_for_permission(const std::string& name, const std::string& label, int seconds) {
@@ -946,18 +946,37 @@ WaitOutcome wait_for_permission(const std::string& name, const std::string& labe
     g_interrupted = false;
 
     WaitOutcome outcome = WaitOutcome::TimedOut;
+    int unreachable = 0;
     for (int i = 0; i < seconds * 4; ++i) {
         if (g_interrupted) {
             outcome = WaitOutcome::Interrupted;
             break;
         }
-        if (service_permission_state(name) == "granted") {
+        const std::string state = service_permission_state(name);
+        if (state == "granted") {
             outcome = WaitOutcome::Granted;
             break;
         }
+
+        // "unknown" means the service did not answer, which is a different
+        // problem from "not granted" and needs saying. Spinning "waiting for
+        // you to allow it" at someone whose service has died is the kind of
+        // message that wastes an afternoon.
+        if (state == "unknown") {
+            ++unreachable;
+            if (unreachable > 24) {  // ~6s of silence
+                outcome = WaitOutcome::ServiceDown;
+                break;
+            }
+        } else {
+            unreachable = 0;
+        }
+
+        const std::string note = unreachable > 0 ? yellow("service not answering...")
+                                                 : dim("waiting... press enter to skip");
         if (color_enabled()) {
             std::cout << "\r\x1b[2K  " << cyan(std::string(1, spin[i % 4])) << " " << label << "  "
-                      << dim("waiting... press enter to skip") << std::flush;
+                      << note << std::flush;
         } else if (i == 0) {
             std::cout << "  .. " << label << "  waiting, press enter to skip\n" << std::flush;
         }
@@ -997,6 +1016,12 @@ WaitOutcome wait_for_permission(const std::string& name, const std::string& labe
         case WaitOutcome::TimedOut:
             std::cout << yellow(mark_bad()) << " " << label << "  "
                       << yellow("not granted after " + std::to_string(seconds) + "s") << "\n";
+            break;
+        case WaitOutcome::ServiceDown:
+            std::cout << red(mark_bad()) << " " << label << "  "
+                      << red("the service stopped answering") << "\n"
+                      << "    " << dim("this is not about the permission:") << "\n"
+                      << "    " << cyan("computer-control-mcp setup --status") << "\n";
             break;
     }
     std::cout << std::flush;
@@ -1064,7 +1089,9 @@ bool guide_permissions(bool assume_yes) {
         const WaitOutcome outcome = wait_for_permission(step.id, step.label, 180);
         if (outcome != WaitOutcome::Granted) all = false;
         // Cancelling means cancelling, not "ask me about the next one too".
-        if (outcome == WaitOutcome::Interrupted) break;
+        // A dead service is the same: the next permission cannot be checked
+        // either, so asking about it would only produce a second false report.
+        if (outcome == WaitOutcome::Interrupted || outcome == WaitOutcome::ServiceDown) break;
     }
     return all;
 }
