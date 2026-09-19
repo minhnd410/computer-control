@@ -99,6 +99,8 @@ jobs:
     name: Publish
     needs: build
     runs-on: ubuntu-latest
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -119,3 +121,30 @@ jobs:
             --title "$TAG" \
             --verify-tag \
             --generate-notes
+
+      # Publishing the formula is what makes `brew install` work; doing it by
+      # hand means the tap silently lags the release. The checksums come from
+      # the .sha256 files CI just produced, never from anything retyped.
+      #
+      # HOMEBREW_TAP_TOKEN is a PAT with repo scope on minhnd410/homebrew-tap.
+      # GITHUB_TOKEN cannot push to another repository, so without the secret
+      # this step is skipped rather than failing the release.
+      - name: Publish the Homebrew formula
+        if: env.TAP_TOKEN != ''
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          python3 packaging/homebrew/render_formula.py "$VERSION" dist > /tmp/computer-control.rb
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/minhnd410/homebrew-tap.git" /tmp/tap
+          mkdir -p /tmp/tap/Formula
+          cp /tmp/computer-control.rb /tmp/tap/Formula/computer-control.rb
+          cd /tmp/tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/computer-control.rb
+          git diff --cached --quiet && { echo "formula unchanged"; exit 0; }
+          git commit -m "computer-control $VERSION"
+          git push

@@ -5,188 +5,156 @@
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
 
-**An MCP server for driving a desktop — and the phones on it.** macOS, Windows and Linux, plus iOS simulators, Android emulators and mirrored handsets, on a single C++20 core.
+**Let a model drive your desktop — and the phones on it.**
 
-One binary. Point an MCP client at it and the model gets 32 tools — capture,
-pointer, keyboard, multi-touch, windows, accessibility tree, phones.
-
-```json
-{ "mcpServers": { "computer-control": { "command": "computer-control-mcp" } } }
-```
-
-```bash
-computer-control-mcp --request-permissions   # grant what it needs, then report
-computer-control-mcp --doctor                # why is nothing happening?
-computer-control-mcp --list-tools
-```
-
-Speaks the current MCP revision **2026-07-28** statelessly, and falls back to
-the handshake-based **2025-11-25** and **2025-06-18** — which is what clients
-actually send today, Claude Code included. See
-[protocol revisions](docs/mcp.md#protocol-revisions).
+One small binary, no runtime, no dependencies. Point any MCP client at it and
+the model gets 32 tools: screenshots, clicks, typing, multi-touch gestures,
+window and app control, the accessibility tree, and any iOS simulator, Android
+emulator or mirrored handset visible on screen. macOS, Windows and Linux.
 
 ---
 
 ## Install
 
-Build from source — there is no published release yet. Details:
-**[docs/install.md](docs/install.md)**.
+### macOS and Linux — Homebrew
 
 ```bash
-git clone https://github.com/minhnd410/computer-control.git
-cd computer-control
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
-./build/computer-control-mcp --request-permissions
+brew install minhnd410/tap/computer-control
+computer-control-mcp --request-permissions
 ```
 
-Then point your client at `build/computer-control-mcp`, or copy it onto your
-`PATH`.
+### Windows — winget
 
-> **Not available yet:** prebuilt binaries, Homebrew, winget, `uvx`, and
-> `curl | sh`. The release pipeline and the packaging scaffolding are in
-> [`.github/workflows/release.yml`](.github/workflows/release.yml) and
-> [`packaging/`](packaging); nothing is tagged or published.
+```powershell
+winget install minhnd410.computer-control
+```
 
-**Claude Code in WSL:** install the **Windows** build and have WSL launch it. A Linux binary inside WSL cannot control Windows — WSLg is one-directional. See [docs/wsl.md](docs/wsl.md).
+### Any platform — download
+
+Grab the archive for your platform from
+[Releases](https://github.com/minhnd410/computer-control/releases), verify the
+checksum beside it, and put `computer-control-mcp` on your `PATH`.
+
+### Building it yourself
+
+Only if you want to change it, or you are on a platform with no archive:
+[docs/install.md](docs/install.md).
 
 ---
 
-## Contents
+## Point your client at it
 
-- [Install](#install)
-- [What it can do](#what-it-can-do)
-  - [Gesture fidelity by platform](#gesture-fidelity-by-platform)
-  - [What has actually been tested](#what-has-actually-been-tested)
-- [Use as an MCP server](docs/mcp.md)
-- [Permissions](docs/permissions.md)
-- [Driving phones and simulators](docs/devices.md)
-- [Claude Code in WSL](docs/wsl.md)
-- [Using the library directly](#using-the-library-directly)
-- [Safety](#safety)
-- [Contributing](#contributing) · [Project layout](#project-layout)
-- [Full documentation index](#documentation)
+<details open>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add computer-control computer-control-mcp
+```
+</details>
+
+<details>
+<summary><b>Claude Desktop, Cursor, Zed</b></summary>
+
+```json
+{
+  "mcpServers": {
+    "computer-control": { "command": "computer-control-mcp" }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>VS Code / GitHub Copilot</b> — <code>mcp.json</code></summary>
+
+```json
+{
+  "servers": {
+    "computer-control": { "type": "stdio", "command": "computer-control-mcp" }
+  }
+}
+```
+</details>
+
+On **macOS you must grant two permissions** or every tool will appear to work
+and do nothing. Run `computer-control-mcp --request-permissions`, then
+`--doctor` to confirm. If something is still wrong, `--doctor` names the exact
+settings pane — see [permissions](docs/permissions.md).
+
+Using **Claude Code inside WSL**? Install the *Windows* build and have WSL
+launch it. A Linux binary inside WSL cannot reach the Windows desktop:
+[why](docs/wsl.md).
 
 ---
 
 ## What it can do
 
-| Area | Capabilities |
+| | |
 |---|---|
-| **Pointer** | move, click (single/double/triple/hover), five buttons, modifier-clicks, press/release, scroll (line and pixel-precise, phased), drag-and-drop with correct press/settle timing |
-| **Paths** | freehand strokes with optional Catmull-Rom smoothing, per-point pressure and dwell, pen routing where supported |
-| **Motion** | `instant`, `linear`, `ease`, and `human` (jitter + overshoot-and-settle), seedable for reproducible paths |
-| **Keyboard** | chords (`cmd+shift+a`), sequences (`cmd+k cmd+s`), hold-for-duration, explicit down/up, layout-independent Unicode (emoji, CJK) |
-| **Gestures** | tap, n-finger swipe/pan, pinch, rotate, smart zoom, long press, force press, edge swipe — up to 10 contacts |
-| **System** | launcher, search, app switcher, overview, desktop switching, notifications, capture UI, emoji, run dialog, settings, file manager, lock |
-| **Capture** | full desktop, per-display, per-window, per-region; PNG and JPEG encoded in-process; automatic downscaling to a payload budget |
-| **Windows** | list, activate, move, resize, minimise/maximise/fullscreen, close; fuzzy title matching |
-| **Accessibility** | full element tree with numbered labels, element-at-point, focused element, invoke/toggle/set-value |
-| **System services** | clipboard, process list/kill, shell, notifications, Windows registry |
-| **Mobile** | discovery, boot/shutdown, tap/swipe/stroke/gesture, text, hardware buttons, screenshots, install/launch/terminate, deep links, device UI tree |
-| **Permissions** | functional probe, request, and the responsible-process diagnosis |
+| **See** | Screenshot the desktop, a display, a window or a region. `snapshot` adds the accessibility tree with every clickable element numbered. `zoom` re-reads small text at full resolution. |
+| **Point** | Move, click (single, double, triple, hover), five buttons, scroll by line or by pixel, drag and drop, freehand strokes. |
+| **Type** | Chords like `cmd+shift+a`, sequences, hold-for-duration, and Unicode typed directly — emoji and CJK do not depend on your keyboard layout. |
+| **Touch** | Pinch, rotate, n-finger swipe and pan, long press, force press, edge swipe. Up to 10 contacts where the OS allows it. |
+| **Manage** | List, focus, move, resize and close windows. Launch and quit apps. Open the launcher, switch desktops, show notifications. |
+| **Phones** | Drive an iOS simulator, Android emulator or mirrored handset in its own coordinate space. |
 
-### Gesture fidelity by platform
+Two things worth knowing before you trust it with anything:
 
-| Gesture | Windows | Linux | macOS |
-|---|---|---|---|
-| Tap, long press | native | native (uinput) / emulated | native |
-| 2-finger swipe, pan | native | native (uinput) / emulated | **native** (phased scroll) |
-| 3–5 finger swipe | shell shortcuts | native (uinput) | shell shortcuts |
-| Pinch / zoom | native | native (uinput) / emulated | emulated (`cmd`+scroll) |
-| Rotate | native | native (uinput) | **unsupported** |
-| Force press | native | native (uinput) | emulated (long press) |
+**Coordinates carry a space.** Reading a pixel off a Retina screenshot and
+clicking it is the most common way to click the wrong thing. Every point here
+is tagged `logical`, `physical` or `image`, and conversion happens per display,
+so a mixed-DPI setup works. Pass a coordinate straight back from a screenshot
+as `{"x":…,"y":…,"space":"image"}` and it lands where you meant.
+[More](docs/coordinate-spaces.md).
 
-- **Windows** uses `InjectTouchInput` for real contacts, up to 10. But a **multi-finger *trackpad* swipe cannot be synthesized at all**: Windows interprets those in the Precision Touchpad driver from HID reports, and injected contacts are *touchscreen* input that goes to the window underneath. Those route to the shortcuts that driver invokes instead — four fingers switch virtual desktops, three switch apps.
-- **Linux** creates a virtual multitouch touchscreen via `/dev/uinput`, which works on Wayland as well as X11. Without write access it falls back to XTest emulation.
-- **macOS** has no public multi-touch synthesis. Two-finger swipe and pan are genuinely native because `CGEvent` exposes trackpad scroll phases; pinch maps to `cmd`+scroll; rotation has no honest equivalent and is refused.
-
-The `capabilities` tool gives the live answer on any machine; `computer-control-mcp --doctor` prints the same report without a client. For shell-level effects prefer the [`system`](docs/mcp.md) tool — it is both the reliable path and the fast one.
-
-### What has actually been tested
-
-Maintainer-tested:
-
-| OS | Version | Tested by | Exercised |
-|---|---|---|---|
-| macOS | 26.6 (Tahoe), Apple silicon | maintainer | capture, pointer, clicks, drag, stroke, gestures, accessibility tree, permissions, launcher, search, shell, simulator discovery |
-| Linux | Debian 12 under Xvfb | maintainer, **in the Docker image that has since been removed** | capture, pointer, clicks, Unicode typing, chords, emulated gestures, permission reporting |
-| Windows | 11 | maintainer, **before the current code** | see below |
-
-Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC), Linux (gcc + clang, under Xvfb).
-
-**Windows needs a re-test.** The two behaviours that were checked there — running a PowerShell script, and multi-finger trackpad swipes — both turned out to be broken, and both were rewritten. PowerShell now goes through `-EncodedCommand` because the old quoting mangled any script containing a double quote; multi-finger swipes now map to shell shortcuts because touch injection cannot produce a touchpad gesture at all. Neither rewrite has been run on Windows. If you have a Windows machine, this is the single most useful thing to try.
-
-**Not yet exercised by anyone:** the Windows backend since the rewrites above, the Linux `/dev/uinput` native-gesture path (needs a host with a writable uinput device), macOS on Intel, any BSD, and every non-Debian distribution.
-
-**Partially verified:** on macOS, `system --action overview` and the desktop-switching actions deliver their shortcuts correctly, but no effect was observable in a capture on the test machine, so they are not claimed as working. `system` reports what it *sent*, never what the OS did with it.
-
-**Please help.** If you run this anywhere not in that table — another Windows build, a KDE or Wayland session, an Intel Mac, a Raspberry Pi, a physical Android phone over scrcpy — [open an issue](https://github.com/minhnd410/computer-control/issues) with the output of `computer-control-mcp --doctor`. That is a genuinely useful contribution even if you change no code, and it is how the table above grows. See [CONTRIBUTING](CONTRIBUTING.md).
+**Emulation announces itself.** macOS has no public multi-touch API, so a pinch
+there is `cmd`+scroll and a rotate is refused outright rather than faked. Ask
+`capabilities` — or run `computer-control-mcp --doctor` — and it tells you which
+gestures are real on the machine in front of you. [Per-platform
+table](docs/gestures.md).
 
 ---
 
-## Using the library directly
+## What has actually been tested
 
-```cpp
-#include <cc/session.hpp>
+A row here means a person ran that code on that machine. CI compiling it is not
+the same thing and is listed separately.
 
-auto session = cc::Session::create().value();
-auto input = session->input().value();
+| OS | Tested by | Exercised |
+|---|---|---|
+| macOS 26.6, Apple silicon | maintainer | capture, pointer, clicks, drag, stroke, gestures, accessibility tree, permissions, launcher, search, shell, simulator discovery |
+| Debian 12 under Xvfb | maintainer, in a container since removed | capture, pointer, clicks, Unicode typing, chords, emulated gestures |
+| Windows 11 | maintainer, **before the current code** | PowerShell and trackpad swipes were both found broken here and rewritten; **the rewrites have never run on Windows** |
 
-input->click(cc::Point{640, 480}, cc::ClickOptions{.count = 2});
+Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC),
+Linux (gcc + clang, under Xvfb).
 
-cc::GestureRequest pinch;
-pinch.kind = cc::GestureKind::Pinch;
-pinch.center = cc::Point{700, 400};
-pinch.scale = 2.0;
-input->gesture(pinch);
-```
+**Not exercised by anyone:** the Windows backend since those rewrites, the Linux
+`/dev/uinput` native-gesture path, macOS on Intel, any BSD, any non-Debian
+distribution.
 
-`Session` owns the backends and guarantees that everything held — mouse buttons, modifier keys, touch contacts — is released when it is destroyed, including on an exception path.
-
-There is no CLI, no C ABI and no Python binding. To drive this from another language, speak MCP to the server: it is a line-delimited JSON-RPC conversation on stdin and stdout, which any language can hold without a client library. See [docs/install.md](docs/install.md#what-ships).
+**Running it anywhere not in that table is the most useful contribution you can
+make** — even with no code. [Open an
+issue](https://github.com/minhnd410/computer-control/issues) with the output of
+`computer-control-mcp --doctor`. See [CONTRIBUTING](CONTRIBUTING.md).
 
 ---
 
 ## Safety
 
-This library can do anything the user in front of the machine can do.
+This binary can do anything you can do at the keyboard.
 
-- `--no-shell` removes command execution; `--tools` restricts the surface to exactly what you list; registry writes need `--allow-registry`.
-- Bind HTTP to loopback. Binding elsewhere without `CC_AUTH_TOKEN` prints a warning — anything that can reach the port controls the machine.
-- Every held button, key and touch contact is released on shutdown, including on the error path, so an interrupted drag never leaves the desktop stuck. `release_all` recovers manually.
-- No telemetry, no analytics, no network access beyond what a tool call explicitly performs.
+- `--no-shell` removes command execution, `--no-clipboard` removes clipboard
+  access, and `--tools a,b,c` restricts the surface to exactly what you list. A
+  disabled tool is not advertised at all, so the model never sees it.
+- Keep HTTP on loopback. Cross-origin requests are refused, but anything that
+  can reach the port controls the machine.
+- Every held button, key and touch contact is released on shutdown, including
+  on the error path, so an interrupted drag never leaves your desktop stuck.
+- No telemetry, no analytics, no network access beyond what a tool call
+  explicitly performs.
 
-**Never commit screenshots.** They routinely contain password managers, private messages and customer data; `.gitignore` excludes images by default. [SECURITY.md](SECURITY.md) has the threat model.
-
----
-
-## Project layout
-
-```
-include/cc/        Public C++ headers
-src/core/          Platform-independent: coordinate math, motion and gesture
-                   geometry, JSON, PNG/JPEG codecs, deflate, UTF-8
-src/platform/      macos/ (CGEvent, ScreenCaptureKit, AX)
-                   windows/ (SendInput, InjectTouchInput, UIA, GDI)
-                   linux/ (XTest, uinput, EWMH, AT-SPI2)
-src/devices/       Simulator, emulator and mirrored-device transports
-src/actions/       The shared action dispatcher: JSON in, JSON out
-src/mcp/           MCP server — the only binary this project produces
-packaging/         Homebrew formula, winget manifests, install script (none published)
-```
-
-Every tool funnels through one action dispatcher (`src/actions/actions.cpp`). Adding a capability is one `ActionSpec` there, and the MCP tool list is generated from it.
-
----
-
-## Contributing
-
-Contributions are very welcome, and **testing on hardware I do not have is the most useful kind**. See [CONTRIBUTING.md](CONTRIBUTING.md); [CLAUDE.md](CLAUDE.md) documents the architecture and the invariants that break subtly.
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j && ctest --test-dir build --output-on-failure
-```
+[SECURITY.md](SECURITY.md) has the threat model.
 
 ---
 
@@ -194,20 +162,29 @@ cmake --build build -j && ctest --test-dir build --output-on-failure
 
 | | |
 |---|---|
-| [Install](docs/install.md) | Release archives, building from source, what is not published yet. |
-| [MCP server](docs/mcp.md) | Client config, transports, tool gating. |
-| [Permissions](docs/permissions.md) | Per-platform grants, and the macOS responsible-process problem. |
+| [Install](docs/install.md) | Every method, per platform, and building from source. |
+| [MCP server](docs/mcp.md) | Client config, protocol revisions, transports, tool gating. |
+| [Tool reference](docs/tools.md) | All 32 tools and what each is for. |
+| [Permissions](docs/permissions.md) | Per-platform grants, and the macOS responsible-process trap. |
+| [Gestures](docs/gestures.md) | What is real and what is emulated, per platform. |
+| [Coordinate spaces](docs/coordinate-spaces.md) | Logical, physical, image; mixed DPI; device points. |
 | [Devices](docs/devices.md) | iOS simulators, Android emulators, mirrored handsets. |
 | [WSL](docs/wsl.md) | Why the server must run on the Windows side. |
-| [Coordinate spaces](docs/coordinate-spaces.md) | Logical vs physical vs image, mixed DPI, device points. |
-| [JSON schema](docs/json-schema.md) | Every JSON payload the MCP tools return. |
+| [JSON payloads](docs/json-schema.md) | Every structured result the tools return. |
+| [Embedding](docs/embedding.md) | Using the C++ library directly. |
+| [Architecture](docs/architecture.md) | How the pieces fit, for contributors. |
 | [Tool comparison](docs/tool-comparison.md) | What came from Windows-MCP and macOS-MCP, and what did not. |
 
 ---
 
 ## Prior art
 
-The tool surface is a superset of [Windows-MCP](https://github.com/CursorTouch/Windows-MCP) and [macOS-MCP](https://github.com/CursorTouch/MacOS-MCP), both MIT-licensed and worth reading. This project differs in being a single C++ core across three desktop platforms with an explicit coordinate-space model, honest fidelity reporting, and mobile-device support.
+The tool surface is a superset of
+[Windows-MCP](https://github.com/CursorTouch/Windows-MCP) and
+[macOS-MCP](https://github.com/CursorTouch/MacOS-MCP), both MIT-licensed and
+worth reading. This project differs in being one C++ core across three desktop
+platforms with an explicit coordinate-space model, honest fidelity reporting,
+and mobile-device support.
 
 ## License
 

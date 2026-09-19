@@ -102,12 +102,22 @@ These are the things that break subtly if you get them wrong.
 
 ## Documentation
 
-The README is a hub: anything long lives in `docs/` and is linked from its
-table of contents. Keep the README under roughly 250 lines — when a section
-outgrows that, split it into `docs/` and leave a one-line pointer. When
-splitting, watch for `#` inside fenced code blocks: a naive heading regex
-treats `# Debian / Ubuntu` in a bash block as a section boundary and silently
-drops everything after it.
+**The README is for someone deciding whether to use this and getting it
+running. Everything else goes in `docs/`.** Install, client config, what it can
+do, what has been tested, safety, and a link table — nothing more. Mechanism,
+per-platform detail, the protocol, the tool reference, the C++ API and the
+architecture all live under `docs/` and are linked from that table. Keep it
+under roughly 200 lines; when a section outgrows the README, move it out and
+leave a pointer rather than a summary that will drift from the page it
+duplicates.
+
+Installation order is Homebrew, winget, archive download, then source. Building
+from source is the last resort, not the default, and the docs should not
+present it as the normal path.
+
+When splitting a file, watch for `#` inside fenced code blocks: a naive heading
+regex treats `# Debian / Ubuntu` in a bash block as a section boundary and
+silently drops everything after it.
 
 **State what has actually been tested, and by whom.** The README's *What has
 actually been tested* table is the project's credibility. Rules for it:
@@ -126,7 +136,7 @@ actually been tested* table is the project's credibility. Rules for it:
   than quietly widening the claim.
 
 **Do not hand-maintain a number that the code already knows.** The tool counts
-in `docs/mcp.md` are checked against the registry by `tests/test_docs.cpp`,
+in `docs/tools.md` are checked against the registry by `tests/test_docs.cpp`,
 which also fails if a tool is never mentioned there. Adding a tool therefore
 breaks the build until the docs catch up, which is the point. If you write a
 new counted claim, pin it the same way instead of trusting the next person to

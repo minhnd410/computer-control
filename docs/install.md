@@ -1,14 +1,79 @@
 <!-- Split out of the README; see the table of contents there. -->
 # Installation
 
-Build from source. Nothing is published yet — the bottom of this page lists
-what is planned and what is missing for each.
+One binary, `computer-control-mcp`. No runtime, no dependencies to install
+alongside it. Pick the first method that applies to you; building from source
+is the last resort, not the default.
 
-> **No release is published.** There are no prebuilt binaries to download
-> today, so building from source is the only way to install. The pipeline
-> exists (`.github/workflows/release.yml`) and attaches archives with SHA256
-> checksums for macOS, Windows and Linux the moment a `v*` tag is pushed. The
-> archives it produces are **not** code-signed or notarised.
+- [Homebrew](#homebrew-macos-and-linux) — macOS and Linux
+- [winget](#winget-windows) — Windows
+- [Download an archive](#download-an-archive) — anywhere
+- [Build from source](#build-from-source) — contributors, or a platform with no archive
+- [After installing](#after-installing)
+
+## Homebrew (macOS and Linux)
+
+```bash
+brew install minhnd410/tap/computer-control
+```
+
+That pulls the prebuilt archive for your platform from the release and puts
+`computer-control-mcp` on your `PATH`. It does not compile anything.
+
+Upgrading:
+
+```bash
+brew upgrade computer-control
+```
+
+The formula lives in [minhnd410/homebrew-tap](https://github.com/minhnd410/homebrew-tap)
+and is rewritten by CI on every release, with the checksums CI computed — so the
+tap cannot lag the release or carry a hand-typed digest.
+
+**Linux on arm64 has no prebuilt archive.** The formula says so rather than
+installing something wrong; build from source there.
+
+## winget (Windows)
+
+```powershell
+winget install minhnd410.computer-control
+```
+
+Windows needs no permission grants for any of this. The one thing to know is
+that input aimed at a window running at a higher integrity level — an
+installer, Task Manager, anything launched as administrator — is silently
+discarded by UIPI. If a click into such a window appears to do nothing, restart
+the server elevated. `computer-control-mcp --doctor` reports which case you are in.
+
+## Download an archive
+
+Every release attaches an archive per platform plus a `.sha256` beside it.
+
+| Platform | Archive |
+|---|---|
+| macOS, Apple silicon | `computer-control-macos-arm64.tar.gz` |
+| macOS, Intel | `computer-control-macos-x86_64.tar.gz` |
+| Linux, x86_64 | `computer-control-linux-x86_64.tar.gz` |
+| Windows, x86_64 | `computer-control-windows-x86_64.zip` |
+
+```bash
+BASE=https://github.com/minhnd410/computer-control/releases/latest/download
+curl -fsSLO "$BASE/computer-control-macos-arm64.tar.gz"
+curl -fsSLO "$BASE/computer-control-macos-arm64.tar.gz.sha256"
+shasum -a 256 -c computer-control-macos-arm64.tar.gz.sha256   # or sha256sum -c
+tar -xzf computer-control-macos-arm64.tar.gz
+sudo mv computer-control/computer-control-mcp /usr/local/bin/
+```
+
+Keep the archive's original filename — that is the name recorded in the
+`.sha256`. The checksum step is not decoration: this is a binary that can drive
+your desktop.
+
+**The archives are not code-signed or notarised.** On macOS, Gatekeeper
+quarantines them (`xattr -d com.apple.quarantine computer-control-mcp` clears
+it) and, more importantly, an unsigned binary's TCC identity is its code hash —
+so the Accessibility grant does not survive an upgrade. Homebrew has the same
+property. If you want a grant that sticks, build from source and sign it.
 
 ## Build from source
 
@@ -40,43 +105,48 @@ xcode-select --install
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 && cmake --build build --config Release
 ```
 
-Build options: `-DCC_BUILD_MCP=OFF` (library only), `-DCC_ENABLE_NATIVE=ON`
-(tune for this CPU; not for redistributable builds), `-DCC_USE_SYSTEM_ZLIB=OFF`.
+Options: `-DCC_BUILD_MCP=OFF` (library only), `-DCC_ENABLE_NATIVE=ON` (tune for
+this CPU; not for redistributable builds), `-DCC_USE_SYSTEM_ZLIB=OFF`,
+`-DCC_BUILD_APP_BUNDLE=OFF`.
 
-## Coming soon
+### A signed macOS bundle
 
-None of these work yet. The scaffolding is in
-[`packaging/`](../packaging); what is missing is a published tap, a submitted
-manifest, and a package index entry.
+Worth the trouble only if you are tired of re-granting Accessibility after
+every rebuild. A grant follows the *responsible process*, and for a binary
+started from a terminal that is the terminal — so it never appears in System
+Settings on its own. An app bundle opened through LaunchServices is its own
+responsible process:
+
+```bash
+cmake -S . -B build -DCC_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+cmake --build build --target macos_bundle
+open -n build/computer-control.app --args --request-permissions
+```
+
+With an ad-hoc signature the grant is keyed to the code hash and is lost on
+every rebuild, which is why a real identity matters here. See
+[permissions](permissions.md).
+
+## After installing
+
+```bash
+computer-control-mcp --request-permissions   # grant what it needs
+computer-control-mcp --doctor                # confirm, and see what this host can do
+computer-control-mcp --list-tools
+```
+
+Then point your client at it — see the [README](../README.md#point-your-client-at-it)
+for Claude Code, Claude Desktop, Cursor, Zed and VS Code, or [MCP
+server](mcp.md) for transports and tool gating.
+
+## Not available yet
 
 | | Status |
 |---|---|
-| Prebuilt binaries | The release workflow is written and tested end to end; no tag is currently published. |
-| `curl … \| sh` | Script exists in `packaging/scripts/install.sh`, untested against a real release. |
-| Homebrew | Formula written; no tap published. |
-| winget | Manifests written; not submitted to the community repository. |
-| `uvx` | Nothing published to PyPI. |
-| Docker | Removed. A container cannot reach the host's display server, so it could never control a real desktop — it was a sandbox pretending to be an install method. |
-
-## What ships
-
-One binary, `computer-control-mcp`, plus a static library for embedding. There
-is no CLI, no C ABI and no Python package.
-
-To drive this from another language, speak MCP to the server — it is a
-line-delimited JSON-RPC conversation on stdin and stdout, which any language
-can hold without a client library:
-
-```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-  "name":"windows","arguments":{},
-  "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",
-           "io.modelcontextprotocol/clientCapabilities":{}}}}' \
-  | computer-control-mcp | jq '.result.structuredContent.windows[] | select(.focused)'
-```
-
-The [JSON schema](json-schema.md) documents those payloads, and is
-additive-only.
+| `uvx` | Nothing published to PyPI, and there is no Python in this project to publish. |
+| `curl \| sh` | Script exists in `packaging/scripts/install.sh`; Homebrew covers the same platforms better. |
+| Docker | Removed. A container cannot reach the host's display server, so it could never control a real desktop — it was a sandbox presented as an install method. |
+| Linux arm64 archive | No CI runner for it yet. Build from source. |
 
 ---
 
