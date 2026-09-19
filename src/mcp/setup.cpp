@@ -563,6 +563,61 @@ bool configure_client_bridge(const ClientTarget& t, const std::string& server_na
 
 namespace {
 
+// Colour, but only when it is going to a terminal.
+//
+// Escape codes in a redirected stream turn a log into line noise, and NO_COLOR
+// is the convention for people who do not want them at all. This is checked
+// once: the answer cannot change while the process runs, and calling isatty on
+// every write is silly.
+bool color_enabled() {
+    static const bool on = [] {
+        if (std::getenv("NO_COLOR") != nullptr) return false;
+        const char* term = std::getenv("TERM");
+        if (term != nullptr && std::string(term) == "dumb") return false;
+        return cc_isatty(cc_fileno(stdout)) != 0;
+    }();
+    return on;
+}
+
+std::string sgr(const char* code, const std::string& text) {
+    // Styling an empty string emits a pair of escapes around nothing, which is
+    // invisible until someone reads the raw output and wonders what broke.
+    if (text.empty() || !color_enabled()) return text;
+    return std::string("\x1b[") + code + "m" + text + "\x1b[0m";
+}
+
+std::string bold(const std::string& t) {
+    return sgr("1", t);
+}
+std::string dim(const std::string& t) {
+    return sgr("2", t);
+}
+std::string green(const std::string& t) {
+    return sgr("32", t);
+}
+std::string red(const std::string& t) {
+    return sgr("31", t);
+}
+std::string yellow(const std::string& t) {
+    return sgr("33", t);
+}
+std::string cyan(const std::string& t) {
+    return sgr("36", t);
+}
+
+// Marks degrade to ASCII wherever colour is off, which is also where a glyph
+// is least likely to render.
+const char* mark_ok() {
+    return color_enabled() ? "✓" : "ok";
+}
+const char* mark_bad() {
+    return color_enabled() ? "✗" : "!!";
+}
+
+void heading(const std::string& text) {
+    std::cout << "\n" << bold(text) << "\n";
+}
+
 // An arrow-key checkbox picker.
 //
 // Typing "1 3 4" works but makes you hold the mapping in your head while you
@@ -618,11 +673,12 @@ std::optional<std::vector<std::size_t>> pick_clients(
         first = false;
         std::cout << "\x1b[?25l";  // hide the cursor while redrawing
         for (std::size_t i = 0; i < found.size(); ++i) {
-            std::cout << "\x1b[2K" << (i == cursor ? "  \x1b[36m>\x1b[0m " : "    ")
-                      << (chosen[i] ? "[x] " : "[ ] ") << found[i]->name << "\n";
+            const std::string box = chosen[i] ? green("[x]") : dim("[ ]");
+            std::cout << "\x1b[2K" << (i == cursor ? "  " + cyan(">") + " " : "    ") << box << " "
+                      << (i == cursor ? bold(found[i]->name) : found[i]->name) << "\n";
         }
         std::cout << "\x1b[2K\n"
-                  << "\x1b[2K  \x1b[2mspace toggles, a all, enter confirms, esc cancels\x1b[0m\n"
+                  << "\x1b[2K  " << dim("space toggles, a all, enter confirms, esc cancels") << "\n"
                   << std::flush;
     };
 
@@ -683,9 +739,10 @@ void print_permission_summary() {
     const auto states = check_permissions();
     for (const auto& st : states) {
         if (st.state == PermissionState::NotRequired) continue;
-        const char* mark = st.state == PermissionState::Granted ? "ok" : "--";
-        std::cout << "  [" << mark << "] " << to_string(st.permission) << "  "
-                  << to_string(st.state) << "\n";
+        const bool granted = st.state == PermissionState::Granted;
+        std::cout << "  " << (granted ? green(mark_ok()) : yellow(mark_bad())) << " "
+                  << to_string(st.permission) << "  "
+                  << (granted ? dim(to_string(st.state)) : yellow(to_string(st.state))) << "\n";
     }
 
     // Saying "granted" without saying who holds it sends people looking in
@@ -715,20 +772,26 @@ int run_setup(const SetupOptions& opts_in) {
             std::cerr << st.error().message << "\n";
             return 1;
         }
-        std::cout << "Shared service stopped and removed.\n"
-                  << "Client configs still point at it; re-run `setup` to switch them back to\n"
-                  << "a copy per client.\n";
+        std::cout << "\n  " << green(mark_ok()) << " shared service stopped and removed\n"
+                  << "    " << dim("client configs still point at it; re-run `setup` to reconnect")
+                  << "\n\n";
         return 0;
     }
 
     if (opts.status) {
         const AgentStatus st = agent_status();
-        std::cout << "Shared service: " << st.detail << "\n";
+        heading("Shared service");
+        const std::string mark =
+            st.running ? green(mark_ok()) : (st.installed ? yellow(mark_bad()) : dim(mark_bad()));
+        std::cout << "  " << mark << " " << (st.running ? green(st.detail) : yellow(st.detail))
+                  << "\n";
         if (st.installed) {
-            std::cout << "  plist : " << st.plist << "\n";
-            if (!st.binary.empty()) std::cout << "  binary: " << st.binary << "\n";
-            std::cout << "  url   : http://127.0.0.1:" << st.port << "/mcp\n";
+            std::cout << "    " << dim("url    ")
+                      << cyan("http://127.0.0.1:" + std::to_string(st.port) + "/mcp") << "\n";
+            if (!st.binary.empty()) std::cout << "    " << dim("binary " + st.binary) << "\n";
+            std::cout << "    " << dim("plist  " + st.plist) << "\n";
         }
+        std::cout << "\n";
         return st.installed && st.running ? 0 : 1;
     }
 
@@ -750,12 +813,17 @@ int run_setup(const SetupOptions& opts_in) {
     }
 
     if (opts.list) {
-        std::cout << "Clients this can configure:\n\n";
+        heading("Clients this can configure");
         for (const auto& t : targets) {
-            std::cout << "  " << (client_installed(t) ? "found    " : "not found")  //
-                      << "  " << t.id << "\n      " << t.name << "\n      " << t.config << "\n";
+            const bool here = client_installed(t);
+            std::cout << "  " << (here ? green(mark_ok()) : dim(mark_bad())) << " " << bold(t.id)
+                      << dim(here ? "" : "  (not found)") << "\n"
+                      << "    " << t.name
+                      << dim(t.supports_http ? "  \u00b7 http" : "  \u00b7 stdio") << "\n    "
+                      << dim(t.config) << "\n";
         }
-        std::cout << "\nConfigure one with:  computer-control-mcp setup --client <id>\n";
+        std::cout << "\n  " << dim("Configure one with") << "  " << cyan("setup --client <id>")
+                  << "\n\n";
         return 0;
     }
 
@@ -779,10 +847,11 @@ int run_setup(const SetupOptions& opts_in) {
         }
 
         if (found.empty()) {
-            std::cout << "No MCP clients detected on this machine.\n\n"
-                      << "Add the server by hand with this command:\n  " << opts.command << "\n\n"
-                      << "computer-control-mcp setup --list  shows where each client keeps its "
-                         "config.\n\n";
+            heading("Clients");
+            std::cout << "  " << yellow("none detected") << "\n\n"
+                      << "  Add the server by hand with:\n    " << cyan(opts.command) << "\n\n"
+                      << dim("  `setup --list` shows where each client keeps its config.")
+                      << "\n\n";
         } else if (!interactive()) {
             // A pipe or a CI job cannot answer a prompt, and silently editing
             // someone's editor config because they ran this non-interactively
@@ -792,7 +861,8 @@ int run_setup(const SetupOptions& opts_in) {
             std::cout << "\nNot a terminal, so nothing was changed. Re-run interactively, or:\n"
                       << "  computer-control-mcp setup --client " << found.front()->id << "\n\n";
         } else {
-            std::cout << "Found these MCP clients. Which should get computer-control?\n\n";
+            heading("Clients");
+            std::cout << dim("  Which should get computer-control?") << "\n\n";
 
             bool picked = false;
 #if !defined(_WIN32)
@@ -863,14 +933,18 @@ int run_setup(const SetupOptions& opts_in) {
 
     if (shared) {
         const AgentStatus before = agent_status();
-        std::cout << (before.running ? "Shared service already running.\n"
-                                     : "Starting the shared service...\n");
+        heading("Service");
         if (auto st = install_agent(opts.command, port, &token); !st) {
-            std::cout << "  " << st.error().message << "\n";
-            if (!st.error().remedy.empty()) std::cout << "  " << st.error().remedy << "\n";
+            std::cout << "  " << red(mark_bad()) << " " << st.error().message << "\n";
+            if (!st.error().remedy.empty()) {
+                std::cout << "    " << dim(st.error().remedy) << "\n";
+            }
             return 1;
         }
-        std::cout << "  listening on 127.0.0.1:" << port << ", starts again at login\n\n";
+        std::cout << "  " << green(mark_ok()) << " "
+                  << (before.running ? "already running" : "started") << "  "
+                  << cyan("http://127.0.0.1:" + std::to_string(port) + "/mcp") << "\n"
+                  << "    " << dim("runs in the background and starts again at login") << "\n";
     }
 
     int failures = 0;
@@ -892,53 +966,61 @@ int run_setup(const SetupOptions& opts_in) {
         }
 
         if (done) {
-            std::cout << "  added to " << t->name << how << "  (" << t->config << ")\n";
-            if (!t->note.empty()) std::cout << "      " << t->note << "\n";
+            std::cout << "  " << green(mark_ok()) << " " << t->name << dim(how) << "\n"
+                      << "    " << dim(t->config) << "\n";
+            if (!t->note.empty()) std::cout << "    " << yellow("note") << " " << t->note << "\n";
         } else {
             ++failures;
-            std::cout << "  could not update " << t->name << ": " << error << "\n";
+            std::cout << "  " << red(mark_bad()) << " " << t->name << "  " << red(error) << "\n";
         }
     }
     if (!chosen.empty()) std::cout << "\n";
 
     if (any_bridged) {
-        std::cout << "Clients that can only launch a command run `bridge`, which forwards to\n"
-                  << "the service. The bridge holds no permissions itself, so the grant below\n"
-                  << "still covers them.\n\n";
+        std::cout << dim("  Clients that can only launch a command run `bridge`, which forwards\n"
+                         "  to the service. The bridge holds no permissions of its own, so the\n"
+                         "  grant below still covers them.")
+                  << "\n\n";
     }
     if (any_codex) {
-        std::cout << "Codex reads its token from the environment rather than its config, so\n"
-                  << "add this to your shell profile:\n"
-                  << "  export CC_AUTH_TOKEN=$(cat ~/.config/computer-control/token)\n\n";
+        std::cout << "  " << yellow("Codex")
+                  << dim(" reads its token from the environment, so add this to your shell:")
+                  << "\n    "
+                  << cyan("export CC_AUTH_TOKEN=$(cat ~/.config/computer-control/token)") << "\n\n";
     }
 
     if (opts.permissions) {
-        std::cout << "Permissions:\n";
+        heading("Permissions");
         if (shared) {
             // The agent is the process that needs the grant now, and it is a
             // different process from this one - so this process's own state
             // says nothing useful about it.
-            std::cout << "  The shared service runs as its own process, so grant the permission\n"
-                      << "  to it rather than to any client. It appears in System Settings as\n"
-                      << "     computer-control-mcp\n"
-                      << "  under Privacy & Security > Accessibility, and again under Screen &\n"
-                      << "  System Audio Recording. Add it with + if it is not listed yet.\n\n";
+            std::cout << dim("  The service is its own process, so the permission goes to it\n"
+                             "  rather than to any client.")
+                      << "\n\n  Enable " << bold("computer-control-mcp") << " under\n"
+                      << "    " << cyan("Privacy & Security \u203a Accessibility") << "\n"
+                      << "    " << cyan("Privacy & Security \u203a Screen & System Audio Recording")
+                      << "\n"
+                      << dim("  Add it with + if it is not listed yet.") << "\n\n";
             if (opts.assume_yes || !interactive()) {
                 (void)open_permission_settings(Permission::Accessibility);
             } else {
-                std::cout << "  Open that pane now? [Y/n] " << std::flush;
+                std::cout << "  Open that pane now? " << dim("[Y/n]") << " " << std::flush;
                 std::string answer;
                 std::getline(std::cin, answer);
                 if (answer.empty() || answer[0] == 'y' || answer[0] == 'Y') {
                     (void)open_permission_settings(Permission::Accessibility);
                 }
             }
-            std::cout << "\n  After granting, restart the service so it picks the grant up:\n"
-                      << "    computer-control-mcp setup --restart\n\n";
-            std::cout << "Check anything later with:\n"
-                      << "  computer-control-mcp setup --status    is the service running?\n"
-                      << "  computer-control-mcp setup --stop      remove it\n"
-                      << "  computer-control-mcp --doctor          what this host can do\n";
+            std::cout << "\n  " << yellow("The grant is read at launch")
+                      << dim(", so restart the service afterwards:") << "\n    "
+                      << cyan("computer-control-mcp setup --restart") << "\n";
+
+            heading("Later");
+            std::cout << "  " << cyan("setup --status") << dim("   is the service running?") << "\n"
+                      << "  " << cyan("setup --stop") << dim("     remove it") << "\n"
+                      << "  " << cyan("--doctor") << dim("         what this host can do")
+                      << "\n\n";
             return failures == 0 ? 0 : 1;
         }
         print_permission_summary();
@@ -968,10 +1050,10 @@ int run_setup(const SetupOptions& opts_in) {
         std::cout << "\n";
     }
 
-    std::cout << "Check anything later with:\n"
-              << "  computer-control-mcp --doctor          what this host can do\n"
-              << "  computer-control-mcp setup --list      where each client keeps its config\n"
-              << "  computer-control-mcp setup             run this again\n";
+    heading("Later");
+    std::cout << "  " << cyan("--doctor") << dim("      what this host can do") << "\n"
+              << "  " << cyan("setup --list") << dim("  where each client keeps its config") << "\n"
+              << "  " << cyan("setup") << dim("         run this again") << "\n\n";
     return failures == 0 ? 0 : 1;
 }
 
