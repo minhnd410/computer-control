@@ -1708,6 +1708,19 @@ ActionResult act_app(Session& s, const Value& args) {
             v);
     }
     if (mode == "activate") {
+        const auto pid = args["pid"].as_int(0);
+        if (pid > 0) {
+            auto all = win.value()->list_windows(true);
+            if (!all) return fail(all.error());
+            for (const auto& w : all.value()) {
+                if (w.pid == pid) {
+                    if (auto st = win.value()->activate(w.id); !st) return fail(st.error());
+                    return succeed("Activated pid " + std::to_string(pid) + ".");
+                }
+            }
+            return fail(ErrorCode::NotFound, "pid " + std::to_string(pid) + " has no window",
+                        "Use app mode=list to find a running application with a window.");
+        }
         const std::string name = args["name"].as_string();
         if (name.empty()) return fail(ErrorCode::InvalidArgument, "provide name");
         if (auto st = win.value()->activate_app(name); !st) return fail(st.error());

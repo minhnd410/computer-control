@@ -117,6 +117,7 @@ public:
 
             const auto frontmost = NSWorkspace.sharedWorkspace.frontmostApplication;
             const pid_t front_pid = frontmost ? frontmost.processIdentifier : -1;
+            bool focused_window_seen = false;
 
             for (NSDictionary* w in windows) {
                 WindowInfo info;
@@ -133,7 +134,7 @@ public:
                                    Space::Logical};
 
                 info.on_screen = [w[(__bridge NSString*)kCGWindowIsOnscreen] boolValue];
-                info.focused = (info.pid == front_pid && info.layer == 0);
+                info.focused = false;
 
                 if (const Display* d = displays_->containing(info.bounds.center())) {
                     info.display_index = d->index;
@@ -148,6 +149,11 @@ public:
                 // including it makes "list the windows" useless.
                 if (info.layer != 0 && !include_offscreen) continue;
                 if (info.bounds.w < 2 || info.bounds.h < 2) continue;
+
+                if (!focused_window_seen && info.pid == front_pid && info.layer == 0) {
+                    info.focused = true;
+                    focused_window_seen = true;
+                }
 
                 info.state = info.on_screen ? WindowState::Normal : WindowState::Minimized;
                 out.push_back(std::move(info));
@@ -180,18 +186,22 @@ public:
             std::vector<AppInfo> out;
             auto windows = list_windows(false);
             for (NSRunningApplication* app in NSWorkspace.sharedWorkspace.runningApplications) {
-                // Skip agents and daemons: they have no UI and would swamp the list.
-                if (app.activationPolicy != NSApplicationActivationPolicyRegular) continue;
+                int window_count = 0;
+                if (windows) {
+                    for (const auto& w : windows.value())
+                        if (w.pid == app.processIdentifier) ++window_count;
+                }
+                // Skip agents and daemons, but keep accessory apps that expose a window.
+                if (app.activationPolicy != NSApplicationActivationPolicyRegular &&
+                    window_count == 0)
+                    continue;
                 AppInfo a;
                 a.pid = app.processIdentifier;
                 a.name = to_std(app.localizedName);
                 a.bundle_id = to_std(app.bundleIdentifier);
                 a.executable = to_std(app.executableURL.path);
                 a.active = app.isActive;
-                if (windows) {
-                    for (const auto& w : windows.value())
-                        if (w.pid == a.pid) ++a.window_count;
-                }
+                a.window_count = window_count;
                 out.push_back(std::move(a));
             }
             return out;
@@ -231,10 +241,20 @@ public:
 
     Status activate_app(std::string_view name_or_bundle) override {
         @autoreleasepool {
+            auto windows = list_windows(true);
+            if (!windows) return windows.error();
             NSRunningApplication* best = nil;
             int best_score = 0;
             for (NSRunningApplication* app in NSWorkspace.sharedWorkspace.runningApplications) {
-                if (app.activationPolicy != NSApplicationActivationPolicyRegular) continue;
+                bool has_window = false;
+                for (const auto& window : windows.value()) {
+                    if (window.pid == app.processIdentifier) {
+                        has_window = true;
+                        break;
+                    }
+                }
+                if (app.activationPolicy != NSApplicationActivationPolicyRegular && !has_window)
+                    continue;
                 const int s = std::max(fuzzy_score(name_or_bundle, to_std(app.localizedName)),
                                        fuzzy_score(name_or_bundle, to_std(app.bundleIdentifier)));
                 if (s > best_score) {
