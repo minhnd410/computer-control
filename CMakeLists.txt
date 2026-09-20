@@ -18,7 +18,7 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 project(computer_control
-  VERSION 0.8.2
+  VERSION 0.8.3
         DESCRIPTION "Cross-platform desktop and mobile-simulator automation core"
         LANGUAGES C CXX)
 
@@ -271,6 +271,7 @@ endif()
 if(CC_BUILD_MCP)
   add_executable(cc_mcp
     src/mcp/main.cpp
+    src/mcp/config.cpp
     src/mcp/server.cpp
     src/mcp/tools.cpp
     src/mcp/transport.cpp
@@ -293,12 +294,14 @@ if(CC_BUILD_TESTS)
     tests/test_device.cpp
     tests/test_text.cpp
     tests/test_mcp.cpp
+    tests/test_config.cpp
     tests/test_docs.cpp
     tests/test_setup.cpp
     # The protocol layer is exercised through the real server dispatch rather
     # than a reimplementation of it, so the tests compile the MCP front-end
     # too. main.cpp is excluded: it is the only thing here with a main().
     src/mcp/protocol.cpp
+    src/mcp/config.cpp
     src/mcp/server.cpp
     src/mcp/tools.cpp
     src/mcp/transport.cpp

@@ -10,6 +10,7 @@
 #include "actions/actions.hpp"
 #include "cc/permissions.hpp"
 #include "mcp/bridge.hpp"
+#include "mcp/config.hpp"
 #include "mcp/protocol.hpp"
 #include "mcp/server.hpp"
 #include "mcp/setup.hpp"
@@ -26,8 +27,9 @@ USAGE
 
 TRANSPORT
   --transport stdio|http     Default: stdio (what MCP clients launch).
-  --host HOST                HTTP bind address. Default: 127.0.0.1
-  --port PORT                HTTP port. Default: 8765
+    --host HOST                HTTP bind address. Default: 127.0.0.1
+    --port PORT                HTTP port. Default: 8765
+    --config FILE              Read persistent server options from FILE.
   --auth-token TOKEN         Require `Authorization: Bearer TOKEN` on HTTP.
                              Also read from CC_AUTH_TOKEN so the token never
                              has to appear in a process listing.
@@ -113,6 +115,18 @@ const char* env_or_null(const char* name) {
     return (v && *v) ? v : nullptr;
 }
 
+std::string config_path_arg(int argc, char** argv, bool* missing) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) != "--config") continue;
+        if (i + 1 >= argc) {
+            *missing = true;
+            return {};
+        }
+        return argv[i + 1];
+    }
+    return {};
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -162,6 +176,12 @@ int main(int argc, char** argv) {
             const std::string a = argv[i];
             if (a == "--list") {
                 opts.list = true;
+            } else if (a == "--config" && i + 1 < argc) {
+                opts.config_path = argv[++i];
+            } else if (a == "--transport" && i + 1 < argc) {
+                opts.transport = argv[++i];
+            } else if (a == "--host" && i + 1 < argc) {
+                opts.host = argv[++i];
             } else if (a == "--status") {
                 opts.status = true;
             } else if (a == "--stop") {
@@ -170,6 +190,24 @@ int main(int argc, char** argv) {
                 opts.restart = true;
             } else if (a == "--port" && i + 1 < argc) {
                 opts.port = std::atoi(argv[++i]);
+            } else if (a == "--auth-token" && i + 1 < argc) {
+                opts.auth_token = argv[++i];
+            } else if (a == "--tools" && i + 1 < argc) {
+                opts.enabled_tools = split_csv(argv[++i]);
+            } else if (a == "--exclude-tools" && i + 1 < argc) {
+                opts.disabled_tools = split_csv(argv[++i]);
+            } else if (a == "--no-shell") {
+                opts.allow_shell = false;
+            } else if (a == "--no-clipboard") {
+                opts.allow_clipboard = false;
+            } else if (a == "--allow-registry") {
+                opts.allow_registry = true;
+            } else if (a == "--max-capture-dimension" && i + 1 < argc) {
+                opts.max_capture_dimension = std::atoi(argv[++i]);
+            } else if (a == "--prompt-permissions") {
+                opts.prompt_for_permissions = true;
+            } else if (a == "--verbose") {
+                opts.log_requests = true;
             } else if (a == "--no-permissions") {
                 opts.permissions = false;
             } else if (a == "--yes" || a == "-y") {
@@ -202,6 +240,19 @@ OPTIONS
                          permission.
   --stop                 Stop and remove the shared service.
   --port N               Port for the shared service. Default: 8765
+    --config FILE          Persistent server config path. Default: ~/.config/computer-control/config.json
+    --transport MODE       Persist the service transport (macOS setup requires http).
+    --host HOST            Persist the service bind address.
+    --auth-token TOKEN     Persist the HTTP bearer token.
+    --tools a,b,c          Persist the enabled tool allowlist.
+    --exclude-tools a,b   Persist disabled tools.
+    --no-shell             Persist shell disabled.
+    --no-clipboard         Persist clipboard disabled.
+    --allow-registry       Persist Windows registry writes enabled.
+    --max-capture-dimension N
+                                                 Persist the capture dimension limit.
+    --prompt-permissions   Persist permission prompting on first use.
+    --verbose              Persist request logging.
   --client a,b           Configure these clients without asking. Ids come from
                          --list.
   --no-permissions       Skip the permission step.
@@ -223,6 +274,22 @@ alone.
         }
         return cc::mcp::run_setup(opts);
     }
+
+    bool missing_config = false;
+    const std::string config_path = config_path_arg(argc, argv, &missing_config);
+    if (missing_config) {
+        std::cerr << "computer-control: --config needs a file\n";
+        return 2;
+    }
+    auto loaded_config = cc::mcp::load_server_config(config_path);
+    if (!loaded_config) {
+        std::cerr << "computer-control: " << loaded_config.error().message << "\n";
+        if (!loaded_config.error().remedy.empty()) {
+            std::cerr << loaded_config.error().remedy << "\n";
+        }
+        return 2;
+    }
+    cfg = loaded_config.value();
 
     if (const char* t = env_or_null("CC_AUTH_TOKEN")) cfg.auth_token = t;
     if (const char* d = env_or_null("CC_MAX_CAPTURE_DIMENSION")) {
@@ -277,7 +344,7 @@ alone.
                 const cc::mcp::AgentStatus agent = cc::mcp::agent_status();
                 if (agent.installed) {
                     std::cout << "Shared service  " << (agent.running ? "running" : agent.detail)
-                              << "  http://127.0.0.1:" << agent.port << "/mcp\n"
+                              << "  http://" << agent.host << ":" << agent.port << "/mcp\n"
                               << "This is the process that needs the permissions; this terminal's\n"
                               << "own grants do not affect it.\n\n";
                     if (!agent.running) {
@@ -320,6 +387,7 @@ alone.
                         if (restart) {
                             cc::mcp::SetupOptions ropts;
                             ropts.restart = true;
+                            ropts.config_path = config_path;
                             ropts.command = cc::executable_path();
                             (void)cc::mcp::run_setup(ropts);
                             const std::string again = cc::mcp::ask_service("permissions");
@@ -383,6 +451,8 @@ alone.
             return 0;
         } else if (arg == "--transport")
             cfg.transport = next("stdio or http");
+        else if (arg == "--config")
+            (void)next("a config file");
         else if (arg == "--host")
             cfg.host = next("a host");
         else if (arg == "--port")

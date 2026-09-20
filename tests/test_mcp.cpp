@@ -461,3 +461,13 @@ TEST(mcp_registry_is_hidden_unless_it_is_asked_for) {
         CHECK(list["tools"][i]["name"].as_string() != "registry");
     }
 }
+
+TEST(mcp_empty_enabled_tools_advertises_the_complete_registry) {
+    mcp::ServerConfig cfg = test_config();
+    cfg.session.allow_registry = true;
+    mcp::Server server(cfg);
+    json::Value list = result_of(server.handle_message(modern("tools/list")));
+
+    CHECK(cfg.enabled_tools.empty());
+    CHECK_EQ(list["tools"].size(), actions::registry().size());
+}

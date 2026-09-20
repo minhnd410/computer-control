@@ -32,6 +32,60 @@ Over HTTP on loopback, with a bearer token:
 CC_AUTH_TOKEN=$(openssl rand -hex 16) computer-control-mcp --transport http --port 8765
 ```
 
+## Persistent server config
+
+The server reads `~/.config/computer-control/config.json` when it exists. Use
+`--config PATH` to select another file. Precedence is:
+
+1. Built-in defaults
+2. The JSON config file
+3. `CC_AUTH_TOKEN`, `CC_NO_SHELL` and other environment settings
+4. Explicit command-line flags
+
+Example:
+
+```json
+{
+  "server": {
+    "transport": "http",
+    "host": "127.0.0.1",
+    "port": 8765,
+    "auth_token": "replace-me",
+    "enabled_tools": [],
+    "disabled_tools": [],
+    "log_requests": false
+  },
+  "session": {
+    "allow_shell": false,
+    "allow_filesystem": true,
+    "allow_registry": false,
+    "allow_clipboard": false,
+    "block_when_locked": true,
+    "prompt_for_permissions": false,
+    "default_max_capture_dimension": 1600
+  }
+}
+```
+
+An omitted or empty `enabled_tools` list enables every tool. Use
+`disabled_tools` or the session safety flags to narrow that default.
+
+`computer-control-mcp setup` writes this file and accepts the server flags
+needed to update it. On macOS the launchd service starts with `--config`, so the
+saved transport, host, port, tool allowlist and session safety settings survive
+service restarts. The generated token is also kept in
+`~/.config/computer-control/token` for bridge clients; both files are written
+with user-only permissions.
+
+## macOS snapshot scope
+
+An unrestricted macOS `snapshot` adaptively scans the frontmost application,
+Finder desktop roots, reachable visible dialog owners, and a small system-UI
+allowlist: Dock, Control Center, SystemUIServer menu-bar extras, Spotlight and
+Notification Center. It also probes background applications and scans only
+those that expose Accessibility menu-bar extras. Explicit `pid` snapshots keep
+the older single-process behavior.
+
 `capabilities` first, then `snapshot` to get numbered elements, then act on them by label rather than by pixel. `batch` runs a predictable sequence in one round trip, which is usually the difference between a snappy agent and a sluggish one.
 
 ---

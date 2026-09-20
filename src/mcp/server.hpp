@@ -6,21 +6,10 @@
 #include <memory>
 #include <string>
 
-#include "cc/session.hpp"
+#include "mcp/config.hpp"
 #include "core/json.hpp"
 
 namespace cc::mcp {
-
-struct ServerConfig {
-    std::string transport = "stdio";  // stdio | http
-    std::string host = "127.0.0.1";
-    int port = 8765;
-    std::string auth_token;                  // required on HTTP when set
-    std::vector<std::string> enabled_tools;  // empty = all
-    std::vector<std::string> disabled_tools;
-    bool log_requests = false;
-    SessionConfig session;
-};
 
 // A transport moves newline- or Content-Length-framed JSON-RPC messages.
 class Transport {

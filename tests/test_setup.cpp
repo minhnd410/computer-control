@@ -255,14 +255,20 @@ TEST(setup_refuses_an_http_entry_for_a_client_that_cannot_use_one) {
 
 TEST(setup_knows_which_clients_can_reach_an_http_endpoint) {
     // If this flips by accident, `setup --shared` either writes entries a
-    // client ignores or needlessly keeps one on stdio with its own grant.
+    // client ignores or selects the wrong transport for that client.
     bool saw_http = false, saw_stdio_only = false;
+    bool saw_vscode = false;
     for (const auto& t : mcp::client_targets()) {
-        if (t.id == "claude-code" || t.id == "vscode" || t.id == "cursor") {
+        if (t.id == "claude-code" || t.id == "cursor") {
             char note[128];
             std::snprintf(note, sizeof(note), "%s should support http", t.id.c_str());
             ::test::report(t.supports_http, "client supports http", __FILE__, __LINE__, note);
             saw_http = true;
+        }
+        if (t.id == "vscode") {
+            ::test::report(!t.supports_http, "VS Code uses the stdio bridge", __FILE__, __LINE__,
+                           "GitHub Copilot must receive the bridge configuration");
+            saw_vscode = true;
         }
         // Codex takes `--url` for a streamable HTTP server, verified against
         // the CLI itself; it belongs in the http group.
@@ -285,6 +291,7 @@ TEST(setup_knows_which_clients_can_reach_an_http_endpoint) {
     }
     CHECK(saw_http);
     CHECK(saw_stdio_only);
+    CHECK(saw_vscode);
 }
 
 TEST(setup_writes_codex_http_as_toml_with_an_env_var_token) {
@@ -313,7 +320,7 @@ TEST(setup_bridge_entry_launches_the_forwarder_without_the_token) {
     // The bridge reads the token from the file the service wrote. Copying the
     // secret into every client's config would spread it for no benefit.
     const std::string path = write_temp("bridge.json", "");
-    mcp::ClientTarget t = json_target(path);
+    mcp::ClientTarget t = json_target(path, "servers", /*needs_type=*/true);
     t.supports_http = false;
 
     std::string error;
@@ -323,7 +330,8 @@ TEST(setup_bridge_entry_launches_the_forwarder_without_the_token) {
     json::ParseError pe;
     json::Value v = json::parse(slurp(path), &pe);
     CHECK(pe.ok);
-    const json::Value& e = v["mcpServers"]["computer-control"];
+    const json::Value& e = v["servers"]["computer-control"];
+    CHECK_EQ(e["type"].as_string(), std::string("stdio"));
     CHECK_EQ(e["command"].as_string(), std::string("/usr/local/bin/ccm"));
     CHECK_EQ(e["args"][0].as_string(), std::string("bridge"));
     CHECK_EQ(e["args"][1].as_string(), std::string("http://127.0.0.1:8765/mcp"));

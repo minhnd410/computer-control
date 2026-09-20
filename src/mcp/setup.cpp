@@ -178,7 +178,10 @@ std::vector<ClientTarget> client_targets() {
     {
         ClientTarget t = target("vscode", "VS Code / GitHub Copilot", vscode_cfg, "servers");
         t.needs_type = true;
-        t.supports_http = true;
+        // GitHub Copilot's HTTP transport does not provide the per-request
+        // protocol metadata this server requires, so use the bridge and let
+        // Copilot negotiate the legacy protocol over stdio.
+        t.supports_http = false;
         add(std::move(t));
     }
     {
@@ -304,15 +307,45 @@ std::string trim(const std::string& s) {
 // the default.
 int port_from_plist(const std::string& text) {
     const auto pos = text.find("--port");
-    if (pos == std::string::npos) return 0;
-    const auto open = text.find("<string>", pos + 6);
-    if (open == std::string::npos) return 0;
-    const auto close = text.find("</string>", open);
-    if (close == std::string::npos) return 0;
-    return std::atoi(text.substr(open + 8, close - open - 8).c_str());
+    if (pos != std::string::npos) {
+        const auto open = text.find("<string>", pos + 6);
+        if (open != std::string::npos) {
+            const auto close = text.find("</string>", open);
+            if (close != std::string::npos) {
+                return std::atoi(text.substr(open + 8, close - open - 8).c_str());
+            }
+        }
+    }
+    const std::string marker = "<string>--config</string>";
+    const auto config_arg = text.find(marker);
+    if (config_arg != std::string::npos) {
+        const auto open = text.find("<string>", config_arg + marker.size());
+        const auto close = open == std::string::npos ? std::string::npos
+                                                       : text.find("</string>", open);
+        if (open != std::string::npos && close != std::string::npos) {
+            auto config = load_server_config(text.substr(open + 8, close - open - 8));
+            if (config) return config.value().port;
+        }
+    }
+    return 8765;
 }
 
-bool port_answers(int port, const std::string& token) {
+std::string config_path_from_plist(const std::string& text) {
+    const std::string marker = "<string>--config</string>";
+    const auto config_arg = text.find(marker);
+    if (config_arg == std::string::npos) return {};
+    const auto open = text.find("<string>", config_arg + marker.size());
+    if (open == std::string::npos) return {};
+    const auto close = text.find("</string>", open);
+    if (close == std::string::npos) return {};
+    return text.substr(open + 8, close - open - 8);
+}
+
+std::string service_host(const std::string& host) {
+    return host.empty() || host == "0.0.0.0" ? "127.0.0.1" : host;
+}
+
+bool port_answers(const std::string& host, int port, const std::string& token) {
     // A bare TCP connect would say "something is listening"; asking for
     // tools/list says "our server is listening and working", which is the
     // thing worth reporting.
@@ -320,7 +353,8 @@ bool port_answers(int port, const std::string& token) {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)"
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "4", "-X", "POST", "http://127.0.0.1:" + std::to_string(port) + "/mcp"};
+        "-fsS", "-m", "4", "-X", "POST",
+        "http://" + service_host(host) + ":" + std::to_string(port) + "/mcp"};
     if (!token.empty()) {
         args.push_back("-H");
         args.push_back("Authorization: Bearer " + token);
@@ -351,6 +385,15 @@ std::string agent_token() {
     return token;
 }
 
+bool store_agent_token(const std::string& token) {
+    std::string error;
+    if (!write_file(token_path(), token + "\n", &error)) return false;
+#if !defined(_WIN32)
+    ::chmod(token_path().c_str(), 0600);
+#endif
+    return true;
+}
+
 std::string ask_service(const std::string& tool) {
     const AgentStatus st = agent_status();
     if (!st.installed || st.port == 0) return {};
@@ -361,7 +404,8 @@ std::string ask_service(const std::string& tool) {
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
 
     std::vector<std::string> args{
-        "-fsS", "-m", "8", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m", "8", "-X", "POST",
+        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -394,8 +438,14 @@ AgentStatus agent_status() {
         st.detail = "not installed";
         return st;
     }
-    st.port = port_from_plist(text);
-    if (st.port == 0) st.port = 8765;
+    const std::string config_path = config_path_from_plist(text);
+    if (!config_path.empty()) {
+        if (auto config = load_server_config(config_path); config) {
+            st.host = config.value().host;
+            st.port = config.value().port;
+        }
+    }
+    if (st.port == 0) st.port = port_from_plist(text);
 
     const auto pos = text.find("<string>/");
     if (pos != std::string::npos) {
@@ -403,24 +453,30 @@ AgentStatus agent_status() {
         if (close != std::string::npos) st.binary = text.substr(pos + 8, close - pos - 8);
     }
 
-    st.running = port_answers(st.port, agent_token());
+    st.running = port_answers(st.host, st.port, agent_token());
     st.detail = st.running ? "running" : "installed but not answering";
     return st;
 }
 
-Status install_agent(const std::string& command, int port, std::string* token_out) {
+Status install_agent(const std::string& command, const ServerConfig& cfg,
+                     const std::string& config_path, std::string* token_out) {
 #if !defined(__APPLE__)
     (void)command;
-    (void)port;
+    (void)cfg;
+    (void)config_path;
     (void)token_out;
     return err(ErrorCode::Unsupported,
                "the shared service is macOS-only, because it is a launchd job",
                "On Windows and Linux each client launches its own copy over stdio, which needs "
                "no permission grant on those platforms anyway.");
 #else
-    const std::string token = agent_token();
+    const std::string token = cfg.auth_token.empty() ? agent_token() : cfg.auth_token;
     if (token.empty()) {
         return err(ErrorCode::IoError, "could not create the bearer token",
+                   "Check that " + token_path() + " is writable.");
+    }
+    if (trim(read_file(token_path())) != token && !store_agent_token(token)) {
+        return err(ErrorCode::IoError, "could not store the bearer token",
                    "Check that " + token_path() + " is writable.");
     }
     if (token_out) *token_out = token;
@@ -436,9 +492,9 @@ Status install_agent(const std::string& command, int port, std::string* token_ou
         "  <key>Label</key><string>";
     plist += kAgentLabel;
     plist += "</string>\n  <key>ProgramArguments</key>\n  <array>\n";
-    for (const std::string& a :
-         {command, std::string("--transport"), std::string("http"), std::string("--host"),
-          std::string("127.0.0.1"), std::string("--port"), std::to_string(port)}) {
+    const std::string effective_config =
+        config_path.empty() ? default_server_config_path() : config_path;
+    for (const std::string& a : {command, std::string("--config"), effective_config}) {
         plist += "    <string>" + a + "</string>\n";
     }
     plist +=
@@ -469,18 +525,18 @@ Status install_agent(const std::string& command, int port, std::string* token_ou
     if (boot.exit_code != 0) {
         return err(ErrorCode::BackendFailure,
                    "launchctl bootstrap failed: " + trim(boot.err.empty() ? boot.out : boot.err),
-                   "Remove " + path + " and re-run, or start it by hand with:\n  " + command +
-                       " --transport http --port " + std::to_string(port));
+                       "Remove " + path + " and re-run, or start it by hand with:\n  " + command +
+                       " --config " + effective_config);
     }
 
     // Give it a moment to bind before reporting success, so "installed" and
     // "working" do not drift apart in the output.
     for (int i = 0; i < 20; ++i) {
-        if (port_answers(port, token)) return ok();
+        if (port_answers(cfg.host, cfg.port, token)) return ok();
         std::this_thread::sleep_for(std::chrono::milliseconds{250});
     }
     return err(ErrorCode::Timeout,
-               "the service was installed but is not answering on port " + std::to_string(port),
+               "the service was installed but is not answering on port " + std::to_string(cfg.port),
                "Check its log with:\n  launchctl print " + domain + "/" + kAgentLabel);
 #endif
 }
@@ -861,7 +917,8 @@ std::string service_permission_state(const std::string& name) {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "8", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m", "8", "-X", "POST",
+        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -891,7 +948,8 @@ std::string service_executable() {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "8", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m", "8", "-X", "POST",
+        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -917,7 +975,8 @@ void service_request(const std::string& name) {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "20", "-X", "POST", "http://127.0.0.1:" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m", "20", "-X", "POST",
+        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -985,6 +1044,42 @@ bool guide_permissions(bool assume_yes) {
     return true;
 }
 
+namespace {
+
+Status apply_setup_options(const SetupOptions& opts, ServerConfig* cfg) {
+    if (opts.transport) cfg->transport = *opts.transport;
+    if (opts.host) cfg->host = *opts.host;
+    if (opts.port) cfg->port = *opts.port;
+    if (opts.auth_token) cfg->auth_token = *opts.auth_token;
+    if (opts.enabled_tools) cfg->enabled_tools = *opts.enabled_tools;
+    if (opts.disabled_tools) cfg->disabled_tools = *opts.disabled_tools;
+    if (opts.allow_shell) cfg->session.allow_shell = *opts.allow_shell;
+    if (opts.allow_clipboard) cfg->session.allow_clipboard = *opts.allow_clipboard;
+    if (opts.allow_registry) cfg->session.allow_registry = *opts.allow_registry;
+    if (opts.max_capture_dimension) {
+        cfg->session.default_max_capture_dimension = *opts.max_capture_dimension;
+    }
+    if (opts.prompt_for_permissions) {
+        cfg->session.prompt_for_permissions = *opts.prompt_for_permissions;
+    }
+    if (opts.log_requests) cfg->log_requests = *opts.log_requests;
+    return ok();
+}
+
+Result<ServerConfig> setup_config(const SetupOptions& opts) {
+    auto loaded = load_server_config(opts.config_path);
+    if (!loaded) return loaded.error();
+    ServerConfig cfg = loaded.value();
+    if (auto applied = apply_setup_options(opts, &cfg); !applied) return applied.error();
+    return cfg;
+}
+
+std::string service_url(const ServerConfig& cfg) {
+    return "http://" + service_host(cfg.host) + ":" + std::to_string(cfg.port) + "/mcp";
+}
+
+}  // namespace
+
 int run_setup(const SetupOptions& opts_in) {
     SetupOptions opts = opts_in;
     if (opts.command.empty()) opts.command = executable_path();
@@ -1013,7 +1108,9 @@ int run_setup(const SetupOptions& opts_in) {
                   << "\n";
         if (st.installed) {
             std::cout << "    " << dim("url    ")
-                      << cyan("http://127.0.0.1:" + std::to_string(st.port) + "/mcp") << "\n";
+                  << cyan("http://" + service_host(st.host) + ":" + std::to_string(st.port) +
+                      "/mcp")
+                  << "\n";
             if (!st.binary.empty()) std::cout << "    " << dim("binary " + st.binary) << "\n";
             std::cout << "    " << dim("plist  " + st.plist) << "\n";
         }
@@ -1027,14 +1124,28 @@ int run_setup(const SetupOptions& opts_in) {
             std::cerr << "No shared service is installed. Run `setup` first.\n";
             return 1;
         }
+        auto configured = setup_config(opts);
+        if (!configured) {
+            std::cerr << configured.error().message << "\n";
+            return 1;
+        }
+        ServerConfig cfg = configured.value();
+        cfg.transport = "http";
+        if (cfg.auth_token.empty()) cfg.auth_token = agent_token();
+        const std::string config_path =
+            opts.config_path.empty() ? default_server_config_path() : opts.config_path;
+        if (auto saved = save_server_config(cfg, config_path); !saved) {
+            std::cerr << saved.error().message << "\n";
+            return 1;
+        }
         std::string token;
-        if (auto st = install_agent(before.binary.empty() ? opts.command : before.binary,
-                                    before.port ? before.port : opts.port, &token);
+        if (auto st = install_agent(before.binary.empty() ? opts.command : before.binary, cfg,
+                                    config_path, &token);
             !st) {
             std::cerr << st.error().message << "\n";
             return 1;
         }
-        std::cout << "Restarted on 127.0.0.1:" << (before.port ? before.port : opts.port) << "\n";
+        std::cout << "Restarted on " << service_host(cfg.host) << ":" << cfg.port << "\n";
         return 0;
     }
 
@@ -1146,9 +1257,41 @@ int run_setup(const SetupOptions& opts_in) {
     const bool shared = false;
 #endif
 
+    auto configured = setup_config(opts);
+    if (!configured) {
+        std::cerr << configured.error().message << "\n";
+        if (!configured.error().remedy.empty()) std::cerr << configured.error().remedy << "\n";
+        return 1;
+    }
+    ServerConfig service_cfg = configured.value();
+#if defined(__APPLE__)
+    if (!opts.transport) service_cfg.transport = "http";
+    if (service_cfg.transport != "http") {
+        std::cerr << "setup: the macOS shared service requires --transport http\n";
+        return 2;
+    }
+#else
+    if (service_cfg.transport != "stdio") {
+        std::cerr << "setup: this platform's client entries require --transport stdio\n";
+        return 2;
+    }
+#endif
+
+    const std::string config_path =
+        opts.config_path.empty() ? default_server_config_path() : opts.config_path;
+    if (shared && service_cfg.auth_token.empty()) service_cfg.auth_token = agent_token();
+    if (shared && service_cfg.auth_token.empty()) {
+        std::cerr << "setup: could not create the bearer token\n";
+        return 1;
+    }
+    if (auto saved = save_server_config(service_cfg, config_path); !saved) {
+        std::cerr << saved.error().message << "\n";
+        if (!saved.error().remedy.empty()) std::cerr << saved.error().remedy << "\n";
+        return 1;
+    }
+
     std::string token;
-    const int port = opts.port;
-    const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/mcp";
+    const std::string url = service_url(service_cfg);
 
     // Selecting nothing means "not now". Installing a background service that
     // can drive the desktop, for zero clients, is not what that asked for.
@@ -1188,7 +1331,7 @@ int run_setup(const SetupOptions& opts_in) {
                              "    again.")
                       << "\n";
         }
-        if (auto st = install_agent(opts.command, port, &token); !st) {
+        if (auto st = install_agent(opts.command, service_cfg, config_path, &token); !st) {
             std::cout << "  " << red(mark_bad()) << " " << st.error().message << "\n";
             if (!st.error().remedy.empty()) {
                 std::cout << "    " << dim(st.error().remedy) << "\n";
@@ -1197,7 +1340,7 @@ int run_setup(const SetupOptions& opts_in) {
         }
         std::cout << "  " << green(mark_ok()) << " "
                   << (before.running ? "already running" : "started") << "  "
-                  << cyan("http://127.0.0.1:" + std::to_string(port) + "/mcp") << "\n"
+                  << cyan(url) << "\n"
                   << "    " << dim("runs in the background and starts again at login") << "\n";
     }
 
@@ -1256,7 +1399,7 @@ int run_setup(const SetupOptions& opts_in) {
             // the step people were being asked to remember.
             std::cout << "\n";
             std::string token_again;
-            if (auto st = install_agent(opts.command, port, &token_again); st) {
+            if (auto st = install_agent(opts.command, service_cfg, config_path, &token_again); st) {
                 std::cout << "  " << green(mark_ok()) << " service reloaded"
                           << dim("  (a grant is read when the process starts)") << "\n\n";
             }

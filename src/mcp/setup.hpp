@@ -10,10 +10,11 @@
 // installer that "asks which client to use" cannot exist. What can exist is a
 // single command the install instructions point at, which is what this is.
 
+#include <optional>
 #include <string>
 #include <vector>
 
-#include "cc/types.hpp"
+#include "mcp/config.hpp"
 
 namespace cc::mcp {
 
@@ -45,6 +46,7 @@ struct ClientTarget {
 struct AgentStatus {
     bool installed = false;
     bool running = false;
+    std::string host = "127.0.0.1";
     int port = 0;
     std::string plist;
     std::string binary;
@@ -68,7 +70,8 @@ std::string stable_path_for_test(const std::string& exe);
 // moving to the next. Returns true when everything ended up granted.
 bool guide_permissions(bool assume_yes);
 // Writes the plist, starts the job, and waits for the port to answer.
-Status install_agent(const std::string& command, int port, std::string* token_out);
+Status install_agent(const std::string& command, const ServerConfig& cfg,
+                     const std::string& config_path, std::string* token_out);
 Status uninstall_agent();
 // The bearer token, generated on first install and stored 0600.
 std::string agent_token();
@@ -87,7 +90,19 @@ struct SetupOptions {
     bool stop = false;     // tear the agent down and exit
     bool status = false;   // report on the agent and exit
     bool restart = false;  // reload the agent, after a permission change
-    int port = 8765;
+    std::string config_path;  // empty = default_server_config_path()
+    std::optional<std::string> transport;
+    std::optional<std::string> host;
+    std::optional<int> port;
+    std::optional<std::string> auth_token;
+    std::optional<std::vector<std::string>> enabled_tools;
+    std::optional<std::vector<std::string>> disabled_tools;
+    std::optional<bool> allow_shell;
+    std::optional<bool> allow_clipboard;
+    std::optional<bool> allow_registry;
+    std::optional<int> max_capture_dimension;
+    std::optional<bool> prompt_for_permissions;
+    std::optional<bool> log_requests;
     std::string server_name = "computer-control";
     std::string command;            // defaults to this executable's path
     bool command_explicit = false;  // --command was passed, so honour it

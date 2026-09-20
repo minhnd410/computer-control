@@ -67,6 +67,17 @@ What is **out of scope**:
   private messages and customer data; `.gitignore` excludes images by default
   for that reason.
 
+- Treat `~/.config/computer-control/config.json` and
+  `~/.config/computer-control/token` as secrets. Setup writes both with
+  user-only permissions. The config can contain the HTTP bearer token, and the
+  token file is read by the stdio bridge.
+
+- Keep the macOS snapshot allowlist in mind: system UI such as Dock, Control
+  Center, Spotlight, Notification Center, Finder desktop items and menu-bar
+  extras are intentionally visible to an authorized snapshot caller. Do not
+  grant Accessibility to an untrusted client merely because its configured
+  tool list is read-mostly.
+
 ## Supported versions
 
 Pre-1.0: fixes land on `main` and in the next release. There are no maintained
