@@ -47,6 +47,7 @@ jobs:
             libx11-dev libxtst-dev libxrandr-dev libxfixes-dev zlib1g-dev
 
       - name: Build
+        shell: bash
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j 4
