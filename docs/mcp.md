@@ -97,9 +97,15 @@ request gets is decided by how it opens, not by a server setting:
 
 | The client sends | It gets |
 |---|---|
-| `_meta` with `io.modelcontextprotocol/protocolVersion` | that revision, served statelessly |
+| `_meta` with `io.modelcontextprotocol/protocolVersion` in `params` or at the request level | that revision, served statelessly |
 | `initialize` | the requested revision if supported, otherwise 2025-11-25 |
-| Neither | `-32602`, naming the field that is missing |
+| Neither | legacy compatibility mode |
+
+Clients that do not send either form of metadata are accepted in legacy
+compatibility mode. The stdio bridge also adds minimal modern metadata before
+forwarding those requests. A legacy `initialize` handshake is forwarded
+unchanged. Requests that include a protocol version but omit the required
+`clientCapabilities` field still return `-32602`.
 
 2025-11-25 is the newest handshake-based revision and is what clients actually
 send today — Claude Code opens with exactly it. Everything it added over

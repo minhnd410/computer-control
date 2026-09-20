@@ -129,6 +129,21 @@ TEST(mcp_classify_accepts_a_modern_request) {
     CHECK(ctx.context.client_capabilities.contains("elicitation"));
 }
 
+TEST(mcp_classify_accepts_request_metadata_at_the_jsonrpc_level) {
+    json::ParseError pe;
+    json::Value msg =
+        json::parse(R"({"jsonrpc":"2.0","id":1,"method":"tools/list",)"
+                    R"("_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",)"
+                    R"("io.modelcontextprotocol/clientCapabilities":{}}})",
+                    &pe);
+    CHECK(pe.ok);
+
+    const auto ctx = mcp::classify_request(msg, false);
+    CHECK(ctx.ok);
+    CHECK(ctx.context.era == Era::Modern);
+    CHECK_EQ(ctx.context.protocol_version, std::string("2026-07-28"));
+}
+
 TEST(mcp_classify_rejects_an_unsupported_version) {
     json::ParseError pe;
     json::Value msg =
@@ -177,23 +192,33 @@ TEST(mcp_classify_routes_initialize_to_the_legacy_era) {
     CHECK(ctx.context.client_capabilities.contains("roots"));
 }
 
-TEST(mcp_classify_rejects_a_bare_request_but_says_why) {
+TEST(mcp_classify_accepts_a_bare_request_as_legacy_compatibility) {
     json::ParseError pe;
     json::Value msg =
         json::parse(R"({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}})", &pe);
     CHECK(pe.ok);
 
     const auto ctx = mcp::classify_request(msg, /*legacy_session=*/false);
-    CHECK(!ctx.ok);
-    CHECK_EQ(ctx.error["code"].as_int(), std::int64_t{-32602});
-    // Naming the missing key is the difference between a client author
-    // finding this in a minute and in an hour.
-    CHECK(ctx.error["message"].as_string().find("protocolVersion") != std::string::npos);
+    CHECK(ctx.ok);
+    CHECK(ctx.context.era == Era::Legacy);
+    CHECK_EQ(ctx.context.protocol_version, std::string(mcp::kLegacyProtocol));
 
-    // The same request is fine once a handshake has happened.
-    const auto after = mcp::classify_request(msg, /*legacy_session=*/true);
-    CHECK(after.ok);
-    CHECK(after.context.era == Era::Legacy);
+    json::Value incomplete =
+        json::parse(R"({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{)"
+                    R"("_meta":{}}})",
+                    &pe);
+    CHECK(pe.ok);
+    const auto partial = mcp::classify_request(incomplete, false);
+    CHECK(partial.ok);
+    CHECK(partial.context.era == Era::Legacy);
+
+    json::Value progress = json::parse(R"({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{)"
+                                       R"("_meta":{"progressToken":"probe"}}})",
+                                       &pe);
+    CHECK(pe.ok);
+    const auto with_progress = mcp::classify_request(progress, false);
+    CHECK(with_progress.ok);
+    CHECK(with_progress.context.era == Era::Legacy);
 }
 
 // --- dispatch: modern era -------------------------------------------------
@@ -230,14 +255,22 @@ TEST(mcp_tools_list_works_statelessly) {
     }
 }
 
-TEST(mcp_a_modern_request_does_not_open_a_legacy_session) {
+TEST(mcp_top_level_metadata_works_through_dispatch) {
+    mcp::Server server(test_config());
+    const std::string request = R"({"jsonrpc":"2.0","id":1,"method":"tools/list","_meta":{)"
+                                R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)"
+                                R"("io.modelcontextprotocol/clientCapabilities":{}}})";
+    CHECK(!result_of(server.handle_message(request))["tools"].is_null());
+}
+
+TEST(mcp_modern_and_legacy_compatibility_requests_can_coexist) {
     mcp::Server server(test_config());
     CHECK(!result_of(server.handle_message(modern("tools/list"))).is_null());
 
-    // Serving one stateless request must not make the server start guessing
-    // for the next one - that would silently mask a broken client.
+    // A client that omits metadata can still use the same server after a
+    // modern request; it is handled through the legacy compatibility shape.
     const std::string bare = R"({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})";
-    CHECK_EQ(error_of(server.handle_message(bare))["code"].as_int(), std::int64_t{-32602});
+    CHECK(result_of(server.handle_message(bare))["tools"].size() > 0);
 }
 
 // --- dispatch: legacy era -------------------------------------------------

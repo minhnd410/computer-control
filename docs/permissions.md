@@ -48,7 +48,7 @@ Two ways to fix it:
   open -n build/computer-control.app --args permissions --request
   ```
 
-  A bundle launched through LaunchServices is its own responsible process, so it prompts properly and appears in the list as **computer-control**, where you can enable it. Running the binary inside the bundle directly from a shell does *not* do this — it is a child of the shell again, and `--doctor` will say so.
+  A bundle launched as the shared service is its own responsible process, so it prompts properly and appears in the list as **computer-control-mcp**, where you can enable it. Running the binary inside the bundle directly from a shell does *not* do this — it is a child of the shell again, and `--doctor` will say so.
 
 **Signing matters for persistence.** An ad-hoc signature is keyed to the code hash, so every rebuild is a new identity and the grant is lost. Pass a real certificate to keep it:
 
@@ -90,10 +90,10 @@ Pressing enter without granting is fine; it just moves on, and the report at
 the end says what is missing. Nothing is destructive: run `setup` again, or
 grant it later and `setup --restart`.
 
-**Remove the old rows.** Each version you have installed left its own
-`computer-control-mcp` entry, all with the same name and no way to tell them
-apart in the UI. Only the newest is real — the rest point at paths that no
-longer exist. Clear them out with **−** and add the one `setup` prints.
+**Remove obsolete rows.** Older installations may have left raw
+`computer-control-mcp` entries behind, all with the same name and no way to
+tell them apart in the UI. Clear only the entries whose paths point into an
+old Cellar version, then add the stable app bundle that `setup` prints.
 
 Tools that need a permission you declined will fail with a message naming it,
 rather than appearing to work.
@@ -113,11 +113,12 @@ computer-control-mcp setup --restart
 Homebrew installs each version to its own `Cellar/computer-control/<version>/`
 path. The release therefore includes the signed `computer-control.app` bundle
 with the stable identifier `dev.computercontrol.mcp`; `computer-control-mcp setup`
-runs that bundle through LaunchServices for the shared service. The raw
-CLI remains available for clients and diagnostics, but the long-lived service
-is no longer attributed to a versioned Cellar executable. Its Accessibility
-grant survives `brew upgrade` when the release was signed with the same
-Developer ID identity.
+resolves it through Homebrew's stable `opt/computer-control` path and launchd
+supervises the executable inside that bundle directly. The raw CLI remains
+available for clients and diagnostics, but the long-lived service is no longer
+attributed to a versioned Cellar executable or an orphaned `open` wrapper. Its
+Accessibility grant survives `brew upgrade` when the release was signed with
+the same Developer ID identity.
 
 If an older installation left duplicate raw-binary entries behind, remove only
 the entries whose paths point into an old `Cellar/computer-control/<version>/`

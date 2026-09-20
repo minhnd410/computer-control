@@ -468,6 +468,8 @@ AgentStatus agent_status() {
     return st;
 }
 
+void stop_agent_listener(int port);
+
 Status install_agent(const std::string& command, const ServerConfig& cfg,
                      const std::string& config_path, std::string* token_out) {
 #if !defined(__APPLE__)
@@ -508,7 +510,8 @@ Status install_agent(const std::string& command, const ServerConfig& cfg,
              "</string>\n  <key>ProgramArguments</key>\n  <array>\n";
     std::vector<std::string> launch_args;
     if (!bundle.empty()) {
-        launch_args = {"/usr/bin/open", "-n", "-W", bundle, "--args", "--config", effective_config};
+        launch_args = {bundle + "/Contents/MacOS/computer-control-mcp", "--config",
+                       effective_config};
     } else {
         launch_args = {command, "--config", effective_config};
     }
@@ -538,6 +541,7 @@ Status install_agent(const std::string& command, const ServerConfig& cfg,
     // bootstrap on a loaded label fails with "service already loaded".
     (void)devices::exec("launchctl", {"bootout", domain + "/" + kAgentLabel},
                         std::chrono::milliseconds{5000});
+    stop_agent_listener(cfg.port);
     devices::ExecResult boot;
     for (int attempt = 0; attempt < 3; ++attempt) {
         boot = devices::exec("launchctl", {"bootstrap", domain, path},
@@ -563,6 +567,29 @@ Status install_agent(const std::string& command, const ServerConfig& cfg,
                "Check its log with:\n  launchctl print " + domain + "/" + kAgentLabel);
 #endif
 }
+
+#if defined(__APPLE__)
+// Older releases launched the bundle through /usr/bin/open. launchd stopped
+// supervising that wrapper during a reload, leaving the real server alive and
+// serving stale permission state on the configured port.
+void stop_agent_listener(int port) {
+    const auto result = devices::exec(
+        "/usr/sbin/lsof", {"-nP", "-t", "-iTCP:" + std::to_string(port), "-sTCP:LISTEN"},
+        std::chrono::milliseconds{5000});
+    if (result.exit_code != 0) return;
+
+    for (const std::string& line : devices::split_lines(result.out)) {
+        char* end = nullptr;
+        const long raw_pid = std::strtol(line.c_str(), &end, 10);
+        if (end == line.c_str() || raw_pid <= 1 || raw_pid == static_cast<long>(::getpid())) {
+            continue;
+        }
+        (void)::kill(static_cast<pid_t>(raw_pid), SIGTERM);
+    }
+}
+#else
+void stop_agent_listener(int) {}
+#endif
 
 Status uninstall_agent() {
 #if !defined(__APPLE__)
@@ -709,6 +736,21 @@ std::string bundle_path_for_executable(const std::string& exe) {
 #else
     char resolved[PATH_MAX] = {0};
     const std::string actual = ::realpath(exe.c_str(), resolved) ? resolved : exe;
+    const std::string cellar_marker = "/Cellar/";
+    const auto cellar = actual.find(cellar_marker);
+    if (cellar != std::string::npos) {
+        const std::string formula_and_version = actual.substr(cellar + cellar_marker.size());
+        const auto formula_end = formula_and_version.find('/');
+        if (formula_end != std::string::npos) {
+            const std::string prefix = actual.substr(0, cellar);
+            const std::string formula = formula_and_version.substr(0, formula_end);
+            for (const auto& candidate :
+                 {prefix + "/opt/" + formula + "/libexec/computer-control.app",
+                  prefix + "/opt/" + formula + "/computer-control.app"}) {
+                if (exists(candidate + "/Contents/Info.plist")) return candidate;
+            }
+        }
+    }
     const std::string executable_dir = parent_dir(actual);
     const std::string install_dir = parent_dir(executable_dir);
     for (const auto& candidate :
@@ -1128,6 +1170,8 @@ int run_setup(const SetupOptions& opts_in) {
     const auto targets = client_targets();
 
     if (opts.stop) {
+        const AgentStatus before = agent_status();
+        if (before.running) stop_agent_listener(before.port);
         if (auto st = uninstall_agent(); !st) {
             std::cerr << st.error().message << "\n";
             return 1;
@@ -1178,9 +1222,7 @@ int run_setup(const SetupOptions& opts_in) {
             return 1;
         }
         std::string token;
-        if (auto st = install_agent(before.binary.empty() ? opts.command : before.binary, cfg,
-                                    config_path, &token);
-            !st) {
+        if (auto st = install_agent(opts.command, cfg, config_path, &token); !st) {
             std::cerr << st.error().message << "\n";
             return 1;
         }

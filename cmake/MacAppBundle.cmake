@@ -8,9 +8,9 @@
 # by the parent), and the inherited grant turns out to be partial - windows
 # come back as placeholders. There is nothing for the user to enable.
 #
-# A bundle opened through LaunchServices is its own responsible process with a
-# stable bundle identifier, so it prompts properly, appears in the list with a
-# real name, and keeps its grant across rebuilds *provided* the signing
+# A bundle launched as the service executable is its own responsible process
+# with a stable bundle identifier, so it prompts properly, appears in the list
+# with a real name, and keeps its grant across rebuilds *provided* the signing
 # identity is stable. Ad-hoc signatures are keyed on the code hash, which
 # changes every build, so the grant is lost each time - set
 # CC_CODESIGN_IDENTITY to a real certificate to avoid that.

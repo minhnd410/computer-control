@@ -3,10 +3,10 @@
 
 // A stdio front-end for the shared service.
 //
-// Some clients only know how to launch a local command; Claude Desktop is the
-// one that matters here. Left on their own they spawn their own copy of the
-// server, which on macOS means it runs as *their* child and uses *their*
-// Accessibility grant - the whole problem the shared service exists to solve.
+// Some clients only know how to launch a local command. Left on their own they
+// spawn their own copy of the server, which on macOS means it runs as *their*
+// child and uses *their* Accessibility grant - the whole problem the shared
+// service exists to solve.
 //
 // This bridges the gap: the client launches this, it forwards JSON-RPC to the
 // service over loopback, and the answers come back. The bridge itself touches

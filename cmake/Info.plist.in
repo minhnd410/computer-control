@@ -4,8 +4,8 @@
 <dict>
   <key>CFBundleExecutable</key>            <string>computer-control-mcp</string>
   <key>CFBundleIdentifier</key>            <string>@CC_BUNDLE_ID@</string>
-  <key>CFBundleName</key>                  <string>computer-control</string>
-  <key>CFBundleDisplayName</key>           <string>computer-control</string>
+   <key>CFBundleName</key>                  <string>computer-control-mcp</string>
+   <key>CFBundleDisplayName</key>           <string>computer-control-mcp</string>
   <key>CFBundlePackageType</key>           <string>APPL</string>
   <key>CFBundleShortVersionString</key>    <string>@PROJECT_VERSION@</string>
   <key>CFBundleVersion</key>               <string>@PROJECT_VERSION@</string>
@@ -19,8 +19,8 @@
        common App Review rejection and, more to the point, are what the user
        reads when deciding whether to trust this. -->
   <key>NSAccessibilityUsageDescription</key>
-  <string>computer-control needs Accessibility to read the on-screen element tree and to move the pointer and type on your behalf.</string>
+   <string>computer-control-mcp needs Accessibility to read the on-screen element tree and to move the pointer and type on your behalf.</string>
   <key>NSAppleEventsUsageDescription</key>
-  <string>computer-control sends Apple Events to launch and activate applications you ask it to control.</string>
+   <string>computer-control-mcp sends Apple Events to launch and activate applications you ask it to control.</string>
 </dict>
 </plist>

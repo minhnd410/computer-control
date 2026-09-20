@@ -93,7 +93,14 @@ ContextResult classify_request(const json::Value& message, bool legacy_session) 
     ContextResult out;
     const std::string method = message["method"].as_string();
     const json::Value& params = message["params"];
-    const json::Value& meta = params["_meta"];
+    const json::Value& params_meta = params["_meta"];
+    const json::Value& request_meta = message["_meta"];
+    const json::Value* selected_meta = &params_meta;
+    if ((!params_meta.is_object() || !params_meta.contains(meta_keys::kProtocolVersion)) &&
+        request_meta.is_object() && request_meta.contains(meta_keys::kProtocolVersion)) {
+        selected_meta = &request_meta;
+    }
+    const json::Value& meta = *selected_meta;
 
     const bool has_modern_meta = meta.is_object() && meta.contains(meta_keys::kProtocolVersion);
 
@@ -127,9 +134,12 @@ ContextResult classify_request(const json::Value& message, bool legacy_session) 
         return out;
     }
 
-    // No modern metadata. Either a legacy client, or a modern one that forgot
-    // a required field.
-    if (is_legacy_only_method(method) || legacy_session) {
+    // No modern protocol version. A legacy client may have completed a
+    // handshake, and several MCP clients send ordinary requests with either no
+    // metadata or unrelated metadata such as a progress token. Treat all of
+    // those shapes as legacy compatibility. Modern requests are still strict
+    // once they declare a protocol version above.
+    if (is_legacy_only_method(method) || legacy_session || !has_modern_meta) {
         out.context.era = Era::Legacy;
         out.context.protocol_version = kLegacyProtocol;
         if (method == "initialize") {

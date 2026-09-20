@@ -8,6 +8,7 @@
 #include <string>
 
 #include "core/json.hpp"
+#include "mcp/protocol.hpp"
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -189,13 +190,56 @@ int run_bridge(const std::string& url, const std::string& token) {
     // human goes to stderr, or it corrupts the protocol stream.
     std::ios::sync_with_stdio(false);
 
+    bool legacy_session = false;
     std::string line;
     while (std::getline(std::cin, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty()) continue;
 
         json::ParseError pe;
-        const json::Value message = json::parse(line, &pe);
+        json::Value message = json::parse(line, &pe);
+        if (pe.ok && message.is_object()) {
+            const std::string method = message["method"].as_string();
+            if (method == "initialize") {
+                legacy_session = true;
+            }
+
+            const json::Value& params = message["params"];
+            const json::Value& params_meta = params["_meta"];
+            const json::Value& request_meta = message["_meta"];
+            const bool params_has_protocol =
+                params_meta.is_object() && params_meta.contains(meta_keys::kProtocolVersion);
+            const bool request_has_protocol =
+                request_meta.is_object() && request_meta.contains(meta_keys::kProtocolVersion);
+            if (!legacy_session && method != "initialize" && !params_has_protocol &&
+                !request_has_protocol) {
+                json::Value meta = json::Value::object();
+                if (params_meta.is_object())
+                    meta = params_meta;
+                else if (request_meta.is_object())
+                    meta = request_meta;
+
+                meta.set(meta_keys::kProtocolVersion, kModernProtocol);
+                if (!meta.contains(meta_keys::kClientCapabilities)) {
+                    meta.set(meta_keys::kClientCapabilities, json::Value::object());
+                }
+
+                if (params_meta.is_object() || params.is_object() && params.contains("_meta")) {
+                    json::Value enriched_params =
+                        params.is_object() ? params : json::Value::object();
+                    enriched_params.set("_meta", meta);
+                    message.set("params", enriched_params);
+                } else if (request_meta.is_object() || message.contains("_meta")) {
+                    message.set("_meta", meta);
+                } else {
+                    json::Value enriched_params =
+                        params.is_object() ? params : json::Value::object();
+                    enriched_params.set("_meta", meta);
+                    message.set("params", enriched_params);
+                }
+                line = message.dump();
+            }
+        }
         const json::Value id = pe.ok ? message["id"] : json::Value();
         // A notification gets no reply, so a failure forwarding one must not
         // invent a response the client never asked for.
