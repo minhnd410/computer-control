@@ -11,6 +11,7 @@ on:
       tag:
         description: "Existing tag to build a release from"
         required: true
+        type: string
 
 permissions:
   contents: write

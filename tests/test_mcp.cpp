@@ -298,6 +298,19 @@ TEST(mcp_initialize_echoes_the_revision_real_clients_send) {
               .size() > 0);
 }
 
+TEST(mcp_initialize_allows_tools_list_without_initialized_notification) {
+    mcp::Server server(test_config());
+    const std::string init = R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+                             R"("protocolVersion":"2025-11-25","capabilities":{},)"
+                             R"("clientInfo":{"name":"copilot","version":"test"}}})";
+    const auto initialized = result_of(server.handle_message(init));
+    CHECK_EQ(initialized["protocolVersion"].as_string(), std::string("2025-11-25"));
+
+    const auto tools = result_of(
+        server.handle_message(R"({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})"));
+    CHECK(tools["tools"].size() > 0);
+}
+
 // --- dispatch: errors -----------------------------------------------------
 
 TEST(mcp_malformed_json_is_a_parse_error_with_a_null_id) {

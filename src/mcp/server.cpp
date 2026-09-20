@@ -225,6 +225,10 @@ std::string Server::handle_message(const std::string& raw) {
             return rpc_result(id, handle_discover()).dump();
         }
         if (method == "initialize") {
+            // Some clients omit notifications/initialized and send tools/list
+            // immediately after the handshake. The initialize request itself
+            // is enough to select the legacy protocol for this connection.
+            legacy_session_ = true;
             return rpc_result(id, handle_initialize(params)).dump();
         }
         if (method == "tools/list") {
