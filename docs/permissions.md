@@ -110,16 +110,22 @@ to restart and re-check before sending you back there.
 computer-control-mcp setup --restart
 ```
 
-**Every upgrade adds a new entry.** The released binaries are not code-signed,
-so a program's TCC identity is its path plus its code hash. Homebrew installs
-each version to its own `Cellar/computer-control/<version>/` path, so after an
-upgrade macOS sees a program it has never met, adds a fresh row, and the
-previous row points at a path that no longer exists. Delete the old ones; they
-do nothing.
+Homebrew installs each version to its own `Cellar/computer-control/<version>/`
+path. The release therefore includes the signed `computer-control.app` bundle
+with the stable identifier `dev.computercontrol.mcp`; `computer-control-mcp setup`
+runs that bundle through LaunchServices for the shared service. The raw
+CLI remains available for clients and diagnostics, but the long-lived service
+is no longer attributed to a versioned Cellar executable. Its Accessibility
+grant survives `brew upgrade` when the release was signed with the same
+Developer ID identity.
 
-This is the concrete cost of shipping unsigned. A Developer ID certificate
-would keep the identity stable across versions and the grant would survive
-upgrades — see the signing section of [install](install.md).
+If an older installation left duplicate raw-binary entries behind, remove only
+the entries whose paths point into an old `Cellar/computer-control/<version>/`
+directory. Keep the `computer-control` bundle entry, then run:
+
+```bash
+computer-control-mcp setup --restart
+```
 
 **On Windows and Linux none of this applies.** There is no launchd, and a stdio child needs no grant in the first place, so clients launch the server directly.
 

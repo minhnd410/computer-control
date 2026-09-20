@@ -37,6 +37,7 @@ class ComputerControl < Formula
 
   def install
     bin.install "computer-control-mcp"
+    libexec.install "computer-control.app" if OS.mac?
   end
 
   def caveats

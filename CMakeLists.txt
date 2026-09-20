@@ -18,7 +18,7 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 project(computer_control
-  VERSION 0.8.4
+  VERSION 0.8.6
         DESCRIPTION "Cross-platform desktop and mobile-simulator automation core"
         LANGUAGES C CXX)
 

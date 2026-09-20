@@ -19,7 +19,9 @@ brew install minhnd410/tap/computer-control
 ```
 
 That pulls the prebuilt archive for your platform from the release and puts
-`computer-control-mcp` on your `PATH`. It does not compile anything.
+`computer-control-mcp` on your `PATH`. On macOS it also installs the signed
+`computer-control.app` bundle used by the shared service, so its Accessibility
+grant survives Homebrew upgrades. It does not compile anything.
 
 Upgrading:
 

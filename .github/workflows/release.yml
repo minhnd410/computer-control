@@ -50,6 +50,9 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j 4
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cmake --build build --target macos_bundle --config Release -j 4
+          fi
 
       # A release binary that fails to start is worse than no release. This is
       # the same smoke test CI runs, repeated here because the release build
@@ -100,16 +103,21 @@ jobs:
           # --options runtime is required for notarization.
           codesign --force --timestamp --options runtime \
             --sign "$MACOS_SIGN_IDENTITY" build/computer-control-mcp
-          codesign --verify --strict --verbose=2 build/computer-control-mcp
+          codesign --force --timestamp --options runtime \
+            --sign "$MACOS_SIGN_IDENTITY" build/computer-control.app
+          codesign --verify --deep --strict --verbose=2 build/computer-control.app
 
       - name: Package
         shell: bash
         run: |
           mkdir -p dist/computer-control
-          # One binary. Diagnostics live behind --doctor on it rather than in
-          # a second executable.
+          # Keep the CLI plus the macOS bundle in the archive. Diagnostics live
+          # behind --doctor rather than in a second executable.
           if [ -f build/Release/computer-control-mcp.exe ]; then
             cp build/Release/computer-control-mcp.exe dist/computer-control/
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            cp build/computer-control-mcp dist/computer-control/
+            cp -R build/computer-control.app dist/computer-control/
           else
             cp build/computer-control-mcp dist/computer-control/
           fi

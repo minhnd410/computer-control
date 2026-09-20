@@ -345,6 +345,8 @@ std::string service_host(const std::string& host) {
     return host.empty() || host == "0.0.0.0" ? "127.0.0.1" : host;
 }
 
+std::string bundle_path_for_executable(const std::string& exe);
+
 bool port_answers(const std::string& host, int port, const std::string& token) {
     // A bare TCP connect would say "something is listening"; asking for
     // tools/list says "our server is listening and working", which is the
@@ -447,8 +449,16 @@ AgentStatus agent_status() {
     }
     if (st.port == 0) st.port = port_from_plist(text);
 
+    const std::string executable_marker = "<key>CCExecutable</key><string>";
+    const auto executable_pos = text.find(executable_marker);
+    if (executable_pos != std::string::npos) {
+        const auto close = text.find("</string>", executable_pos + executable_marker.size());
+        if (close != std::string::npos)
+            st.binary = text.substr(executable_pos + executable_marker.size(),
+                                    close - executable_pos - executable_marker.size());
+    }
     const auto pos = text.find("<string>/");
-    if (pos != std::string::npos) {
+    if (st.binary.empty() && pos != std::string::npos) {
         const auto close = text.find("</string>", pos);
         if (close != std::string::npos) st.binary = text.substr(pos + 8, close - pos - 8);
     }
@@ -491,10 +501,18 @@ Status install_agent(const std::string& command, const ServerConfig& cfg,
         "<plist version=\"1.0\">\n<dict>\n"
         "  <key>Label</key><string>";
     plist += kAgentLabel;
-    plist += "</string>\n  <key>ProgramArguments</key>\n  <array>\n";
     const std::string effective_config =
         config_path.empty() ? default_server_config_path() : config_path;
-    for (const std::string& a : {command, std::string("--config"), effective_config}) {
+    const std::string bundle = bundle_path_for_executable(command);
+    plist += "</string>\n  <key>CCExecutable</key><string>" + command +
+             "</string>\n  <key>ProgramArguments</key>\n  <array>\n";
+    std::vector<std::string> launch_args;
+    if (!bundle.empty()) {
+        launch_args = {"/usr/bin/open", "-n", "-W", bundle, "--args", "--config", effective_config};
+    } else {
+        launch_args = {command, "--config", effective_config};
+    }
+    for (const std::string& a : launch_args) {
         plist += "    <string>" + a + "</string>\n";
     }
     plist +=
@@ -681,6 +699,24 @@ std::string prefer_stable_path(const std::string& exe) {
     if (::realpath(candidate.c_str(), a) == nullptr) return exe;
     if (::realpath(exe.c_str(), b) == nullptr) return exe;
     return std::string(a) == std::string(b) ? candidate : exe;
+#endif
+}
+
+std::string bundle_path_for_executable(const std::string& exe) {
+#if !defined(__APPLE__)
+    (void)exe;
+    return {};
+#else
+    char resolved[PATH_MAX] = {0};
+    const std::string actual = ::realpath(exe.c_str(), resolved) ? resolved : exe;
+    const std::string executable_dir = parent_dir(actual);
+    const std::string install_dir = parent_dir(executable_dir);
+    for (const auto& candidate :
+         {install_dir + "/libexec/computer-control.app", install_dir + "/computer-control.app",
+          executable_dir + "/computer-control.app"}) {
+        if (exists(candidate + "/Contents/Info.plist")) return candidate;
+    }
+    return {};
 #endif
 }
 
