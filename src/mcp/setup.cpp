@@ -520,8 +520,13 @@ Status install_agent(const std::string& command, const ServerConfig& cfg,
     // bootstrap on a loaded label fails with "service already loaded".
     (void)devices::exec("launchctl", {"bootout", domain + "/" + kAgentLabel},
                         std::chrono::milliseconds{5000});
-    const auto boot =
-        devices::exec("launchctl", {"bootstrap", domain, path}, std::chrono::milliseconds{10000});
+    devices::ExecResult boot;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        boot = devices::exec("launchctl", {"bootstrap", domain, path},
+                             std::chrono::milliseconds{10000});
+        if (boot.exit_code == 0) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds{250});
+    }
     if (boot.exit_code != 0) {
         return err(ErrorCode::BackendFailure,
                    "launchctl bootstrap failed: " + trim(boot.err.empty() ? boot.out : boot.err),
