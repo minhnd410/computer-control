@@ -1003,7 +1003,9 @@ std::string service_executable() {
     json::ParseError pe;
     const json::Value v = json::parse(r.out, &pe);
     if (!pe.ok) return {};
-    return v["result"]["structuredContent"]["executable"].as_string();
+    const json::Value& structured = v["result"]["structuredContent"];
+    const std::string bundle = structured["bundle"].as_string();
+    return bundle.empty() ? structured["executable"].as_string() : bundle;
 }
 
 // Tells the service to raise the prompt for one permission.
@@ -1043,9 +1045,8 @@ bool guide_permissions(bool assume_yes) {
          Permission::ScreenRecording},
     };
 
-    // The path to add is the service's own, not this process's, and not the
-    // symlink in the plist: macOS resolves symlinks before TCC sees them, so
-    // the row in System Settings is the resolved path.
+    // Prefer the service's bundle: TCC grants Accessibility to the signed app
+    // identity, not to the embedded executable path.
     std::string grantee = service_executable();
     if (grantee.empty()) grantee = executable_path();
 
@@ -1057,12 +1058,9 @@ bool guide_permissions(bool assume_yes) {
         }
 
         std::cout << "\n  " << bold(step.label) << "\n"
-                  << "    1. In the window that opens, remove every existing\n"
-                  << "       " << bold("computer-control-mcp") << dim(" row with the ")
-                  << bold("\u2212") << dim(" button.") << "\n"
-                  << dim("       Each version left one behind and they all look identical;\n"
-                         "       only the one below is real.")
-                  << "\n"
+                  << "    1. Remove obsolete raw-binary entries whose paths point into an old\n"
+                  << "       " << bold("Cellar/computer-control/<version>")
+                  << dim(" directory; keep any computer-control app entry.") << "\n"
                   << "    2. Add this with " << bold("+") << " and switch it on:\n"
                   << "       " << cyan(grantee) << "\n"
                   << dim("       (\u2318\u21e7G in the file picker lets you paste a path.)")

@@ -184,6 +184,11 @@ bool has_own_tcc_identity() {
     return !bundle_path().empty();
 }
 
+std::string permission_target_path() {
+    const std::string bundle = bundle_path();
+    return bundle.empty() ? executable_path() : bundle;
+}
+
 std::string permission_owner() {
     return responsible_process_name();
 }
@@ -216,8 +221,8 @@ PermissionStatus check_permission(Permission p) {
                 // Prompting is a no-op while AXIsProcessTrusted() is true, so
                 // do not promise the user a dialog that will never appear.
                 out.can_prompt = false;
-                out.remedy = "Add this binary under " + settings_hint("Accessibility") +
-                             " with the + button:\n    " + executable_path() +
+                out.remedy = "Add this app under " + settings_hint("Accessibility") +
+                             " with the + button:\n    " + permission_target_path() +
                              "\nThen restart the process. Granting " +
                              (owner.empty() ? std::string("the parent application") : owner) +
                              " is not enough on macOS 14 and later.\n"
@@ -235,7 +240,7 @@ PermissionStatus check_permission(Permission p) {
             out.can_prompt = has_own_tcc_identity();
             out.remedy =
                 "Run `computer-control-mcp --request-permissions`, or add it by hand under " +
-                settings_hint("Accessibility") + ":\n    " + executable_path() +
+                settings_hint("Accessibility") + ":\n    " + permission_target_path() +
                 "\nThe grant is read at launch, so restart the process afterwards.";
             return out;
         }
@@ -252,7 +257,7 @@ PermissionStatus check_permission(Permission p) {
             out.can_prompt = true;
             out.remedy = "Run `computer-control-mcp --request-permissions`, or enable it under " +
                          settings_hint("Screen & System Audio Recording") + ":\n    " +
-                         executable_path() + "\nRestart the process afterwards.";
+                         permission_target_path() + "\nRestart the process afterwards.";
             return out;
         }
 

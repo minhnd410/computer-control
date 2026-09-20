@@ -399,13 +399,14 @@ alone.
                     }
                     if (denied) {
                         std::cout << "Still denied. In System Settings > Privacy & Security, "
-                                     "enable\ncomputer-control-mcp under Accessibility and under "
+                                     "enable the computer-control app bundle under Accessibility "
+                                     "and under "
                                      "Screen &\nSystem Audio Recording (add it with + if it is "
                                      "missing), then:\n"
                                   << "  computer-control-mcp setup --restart\n\n"
-                                  << "Each upgrade installs to a new path with a new code hash, so "
-                                     "macOS\ntreats it as a new program and adds a fresh entry. "
-                                     "The old ones are\ndead and can be removed.\n\n"
+                                  << "If older raw-binary entries remain, remove only the ones "
+                                     "whose paths point into an old Cellar version; keep the "
+                                     "signed app bundle entry.\n\n"
                                   << "Running --request-permissions in a terminal will not help:\n"
                                   << "it asks for that terminal, not for the service.\n\n";
                     }

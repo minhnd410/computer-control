@@ -980,6 +980,11 @@ ActionResult act_permissions(Session&, const Value& args) {
                 "add the binary there\nwith the + button, or build the app bundle "
                 "(`cmake --build build --target macos_bundle`)\nand launch it with `open` so "
                 "it holds its own grant.\n";
+    } else if (!bundle.empty()) {
+        text +=
+            "\nAdd this app bundle under System Settings > Privacy & Security with the + button:\n "
+            " " +
+            bundle + "\nIts signed bundle identity is retained across Homebrew upgrades.\n";
     }
     return succeed(text, out);
 }
