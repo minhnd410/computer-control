@@ -87,9 +87,9 @@ struct SetupOptions {
     bool list = false;
     bool permissions = true;
     bool assume_yes = false;
-    bool stop = false;     // tear the agent down and exit
-    bool status = false;   // report on the agent and exit
-    bool restart = false;  // reload the agent, after a permission change
+    bool stop = false;        // tear the agent down and exit
+    bool status = false;      // report on the agent and exit
+    bool restart = false;     // reload the agent, after a permission change
     std::string config_path;  // empty = default_server_config_path()
     std::optional<std::string> transport;
     std::optional<std::string> host;

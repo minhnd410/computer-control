@@ -320,8 +320,8 @@ int port_from_plist(const std::string& text) {
     const auto config_arg = text.find(marker);
     if (config_arg != std::string::npos) {
         const auto open = text.find("<string>", config_arg + marker.size());
-        const auto close = open == std::string::npos ? std::string::npos
-                                                       : text.find("</string>", open);
+        const auto close =
+            open == std::string::npos ? std::string::npos : text.find("</string>", open);
         if (open != std::string::npos && close != std::string::npos) {
             auto config = load_server_config(text.substr(open + 8, close - open - 8));
             if (config) return config.value().port;
@@ -353,8 +353,8 @@ bool port_answers(const std::string& host, int port, const std::string& token) {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)"
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "4", "-X", "POST",
-        "http://" + service_host(host) + ":" + std::to_string(port) + "/mcp"};
+        "-fsS", "-m",   "4",
+        "-X",   "POST", "http://" + service_host(host) + ":" + std::to_string(port) + "/mcp"};
     if (!token.empty()) {
         args.push_back("-H");
         args.push_back("Authorization: Bearer " + token);
@@ -404,8 +404,8 @@ std::string ask_service(const std::string& tool) {
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
 
     std::vector<std::string> args{
-        "-fsS", "-m", "8", "-X", "POST",
-        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m",   "8",
+        "-X",   "POST", "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -525,7 +525,7 @@ Status install_agent(const std::string& command, const ServerConfig& cfg,
     if (boot.exit_code != 0) {
         return err(ErrorCode::BackendFailure,
                    "launchctl bootstrap failed: " + trim(boot.err.empty() ? boot.out : boot.err),
-                       "Remove " + path + " and re-run, or start it by hand with:\n  " + command +
+                   "Remove " + path + " and re-run, or start it by hand with:\n  " + command +
                        " --config " + effective_config);
     }
 
@@ -917,8 +917,8 @@ std::string service_permission_state(const std::string& name) {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "8", "-X", "POST",
-        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m",   "8",
+        "-X",   "POST", "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -948,8 +948,8 @@ std::string service_executable() {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "8", "-X", "POST",
-        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m",   "8",
+        "-X",   "POST", "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -975,8 +975,8 @@ void service_request(const std::string& name) {
                              R"("io.modelcontextprotocol/protocolVersion":"2026-07-28",)" +
                              R"("io.modelcontextprotocol/clientCapabilities":{}}}})";
     std::vector<std::string> args{
-        "-fsS", "-m", "20", "-X", "POST",
-        "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
+        "-fsS", "-m",   "20",
+        "-X",   "POST", "http://" + service_host(st.host) + ":" + std::to_string(st.port) + "/mcp"};
     const std::string token = agent_token();
     if (!token.empty()) {
         args.push_back("-H");
@@ -1108,9 +1108,9 @@ int run_setup(const SetupOptions& opts_in) {
                   << "\n";
         if (st.installed) {
             std::cout << "    " << dim("url    ")
-                  << cyan("http://" + service_host(st.host) + ":" + std::to_string(st.port) +
-                      "/mcp")
-                  << "\n";
+                      << cyan("http://" + service_host(st.host) + ":" + std::to_string(st.port) +
+                              "/mcp")
+                      << "\n";
             if (!st.binary.empty()) std::cout << "    " << dim("binary " + st.binary) << "\n";
             std::cout << "    " << dim("plist  " + st.plist) << "\n";
         }
@@ -1339,8 +1339,7 @@ int run_setup(const SetupOptions& opts_in) {
             return 1;
         }
         std::cout << "  " << green(mark_ok()) << " "
-                  << (before.running ? "already running" : "started") << "  "
-                  << cyan(url) << "\n"
+                  << (before.running ? "already running" : "started") << "  " << cyan(url) << "\n"
                   << "    " << dim("runs in the background and starts again at login") << "\n";
     }
 

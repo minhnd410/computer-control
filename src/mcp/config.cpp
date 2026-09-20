@@ -105,8 +105,8 @@ bool read_int(const json::Value& object, const char* key, int* out, const std::s
     return true;
 }
 
-bool read_string_array(const json::Value& object, const char* key,
-                       std::vector<std::string>* out, const std::string& path, Error* error) {
+bool read_string_array(const json::Value& object, const char* key, std::vector<std::string>* out,
+                       const std::string& path, Error* error) {
     if (!object.contains(key)) return true;
     if (!object[key].is_array()) {
         *error = config_error(path, std::string("'") + key + "' must be an array of strings");
@@ -165,8 +165,8 @@ Result<ServerConfig> load_server_config(const std::string& requested_path) {
     json::ParseError parse_error;
     const json::Value root = json::parse(contents.str(), &parse_error);
     if (!parse_error.ok || !root.is_object()) {
-        return config_error(path, parse_error.ok ? "top level must be an object"
-                                                 : parse_error.message);
+        return config_error(path,
+                            parse_error.ok ? "top level must be an object" : parse_error.message);
     }
 
     ServerConfig cfg;
@@ -196,9 +196,10 @@ Result<ServerConfig> load_server_config(const std::string& requested_path) {
             !read_bool(session, "allow_filesystem", &cfg.session.allow_filesystem, path, &error) ||
             !read_bool(session, "allow_registry", &cfg.session.allow_registry, path, &error) ||
             !read_bool(session, "allow_clipboard", &cfg.session.allow_clipboard, path, &error) ||
-            !read_bool(session, "block_when_locked", &cfg.session.block_when_locked, path, &error) ||
-            !read_bool(session, "prompt_for_permissions", &cfg.session.prompt_for_permissions,
-                       path, &error) ||
+            !read_bool(session, "block_when_locked", &cfg.session.block_when_locked, path,
+                       &error) ||
+            !read_bool(session, "prompt_for_permissions", &cfg.session.prompt_for_permissions, path,
+                       &error) ||
             !read_int(session, "default_max_capture_dimension",
                       &cfg.session.default_max_capture_dimension, path, &error)) {
             return error;

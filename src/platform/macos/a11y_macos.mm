@@ -12,8 +12,8 @@
 //   3. Fetching attributes in one batched call per element where possible, and
 //      skipping subtrees that are entirely off-screen.
 
-#import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
+#import <Foundation/Foundation.h>
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreGraphics/CoreGraphics.h>
@@ -197,9 +197,8 @@ struct SnapshotTarget {
 
 const std::vector<const char*>& system_ui_bundle_ids() {
     static const std::vector<const char*> ids = {
-        "com.apple.dock",              "com.apple.controlcenter",
-        "com.apple.systemuiserver",   "com.apple.Spotlight",
-        "com.apple.notificationcenterui",
+        "com.apple.dock",      "com.apple.controlcenter",        "com.apple.systemuiserver",
+        "com.apple.Spotlight", "com.apple.notificationcenterui",
     };
     return ids;
 }
@@ -218,11 +217,11 @@ NSRunningApplication* running_app_for_bundle(const char* bundle_id) {
 }
 
 std::string running_app_name(std::int64_t pid) {
-    NSRunningApplication* app = [NSRunningApplication
-        runningApplicationWithProcessIdentifier:static_cast<pid_t>(pid)];
+    NSRunningApplication* app =
+        [NSRunningApplication runningApplicationWithProcessIdentifier:static_cast<pid_t>(pid)];
     if (!app) return {};
     return ns_to_std(app.localizedName).empty() ? ns_to_std(app.bundleIdentifier)
-                                                 : ns_to_std(app.localizedName);
+                                                : ns_to_std(app.localizedName);
 }
 
 bool ax_attribute_has_children(AXUIElementRef app, CFStringRef attribute) {
@@ -246,8 +245,8 @@ std::unordered_set<std::int64_t> visible_window_owners() {
         const auto pid = [window[(__bridge NSString*)kCGWindowOwnerPID] longLongValue];
         NSDictionary* bounds = window[(__bridge NSString*)kCGWindowBounds];
         CGRect rect = CGRectZero;
-        if (!bounds || !CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)bounds,
-                                                                 &rect)) {
+        if (!bounds ||
+            !CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)bounds, &rect)) {
             continue;
         }
         if (pid > 0 && rect.size.width > 2 && rect.size.height > 2) owners.insert(pid);
@@ -308,7 +307,8 @@ public:
                 auto apps = wb.value()->list_apps();
                 if (!apps) return apps.error();
 
-                if (NSRunningApplication* frontmost = NSWorkspace.sharedWorkspace.frontmostApplication) {
+                if (NSRunningApplication* frontmost =
+                        NSWorkspace.sharedWorkspace.frontmostApplication) {
                     add_snapshot_target(&targets, frontmost.processIdentifier, true, true, true,
                                         false);
                 }
@@ -352,16 +352,16 @@ public:
                     CFRelease(candidate);
                 }
 
-                std::stable_sort(targets.begin(), targets.end(), [](const SnapshotTarget& a,
-                                                                    const SnapshotTarget& b) {
-                    const int a_priority = (a.scan_menu_bar ? 100 : 0) +
-                                           (a.scan_extras ? 80 : 0) +
-                                           (a.scan_children_if_windowless ? 60 : 0);
-                    const int b_priority = (b.scan_menu_bar ? 100 : 0) +
-                                           (b.scan_extras ? 80 : 0) +
-                                           (b.scan_children_if_windowless ? 60 : 0);
-                    return a_priority > b_priority;
-                });
+                std::stable_sort(targets.begin(), targets.end(),
+                                 [](const SnapshotTarget& a, const SnapshotTarget& b) {
+                                     const int a_priority =
+                                         (a.scan_menu_bar ? 100 : 0) + (a.scan_extras ? 80 : 0) +
+                                         (a.scan_children_if_windowless ? 60 : 0);
+                                     const int b_priority =
+                                         (b.scan_menu_bar ? 100 : 0) + (b.scan_extras ? 80 : 0) +
+                                         (b.scan_children_if_windowless ? 60 : 0);
+                                     return a_priority > b_priority;
+                                 });
             }
 
             // macOS can report AXIsProcessTrusted() == true while still refusing
@@ -389,8 +389,7 @@ public:
                         (nodes_left_ <= 0) ? "node budget exhausted" : "time budget exhausted";
                     break;
                 }
-                AXUIElementRef app =
-                    AXUIElementCreateApplication(static_cast<pid_t>(target.pid));
+                AXUIElementRef app = AXUIElementCreateApplication(static_cast<pid_t>(target.pid));
                 if (!app) continue;
                 // One second per message: long enough for a busy app to answer,
                 // short enough that a hung one cannot eat the whole budget.
@@ -438,7 +437,7 @@ public:
                             for (CFIndex i = 0; i < CFArrayGetCount(array); ++i) {
                                 if (Clock::now() > deadline_ || nodes_left_ <= 0) break;
                                 append_root(static_cast<AXUIElementRef>(const_cast<void*>(
-                                                   CFArrayGetValueAtIndex(array, i))),
+                                                CFArrayGetValueAtIndex(array, i))),
                                             target.pid, app_name);
                             }
                         }

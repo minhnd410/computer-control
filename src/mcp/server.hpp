@@ -6,8 +6,8 @@
 #include <memory>
 #include <string>
 
-#include "mcp/config.hpp"
 #include "core/json.hpp"
+#include "mcp/config.hpp"
 
 namespace cc::mcp {
 
