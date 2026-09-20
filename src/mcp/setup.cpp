@@ -1166,6 +1166,10 @@ int run_setup(const SetupOptions& opts_in) {
     if (opts.command.empty()) opts.command = executable_path();
     if (opts.command.empty()) opts.command = "computer-control-mcp";
     if (!opts.command_explicit) opts.command = prefer_stable_path(opts.command);
+    // The running service may be kept on its existing binary to preserve its
+    // TCC grants, but client configs should still launch the command the user
+    // just invoked. These paths only coincide when no older service exists.
+    const std::string client_command = opts.command;
 
     const auto targets = client_targets();
 
@@ -1267,7 +1271,7 @@ int run_setup(const SetupOptions& opts_in) {
         if (found.empty()) {
             heading("Clients");
             std::cout << "  " << yellow("none detected") << "\n\n"
-                      << "  Add the server by hand with:\n    " << cyan(opts.command) << "\n\n"
+                      << "  Add the server by hand with:\n    " << cyan(client_command) << "\n\n"
                       << dim("  `setup --list` shows where each client keeps its config.")
                       << "\n\n";
         } else if (!interactive()) {
@@ -1431,13 +1435,13 @@ int run_setup(const SetupOptions& opts_in) {
         bool done = false;
         const char* how = "";
         if (!shared) {
-            done = configure_client(*t, opts.server_name, opts.command, &error);
+            done = configure_client(*t, opts.server_name, client_command, &error);
         } else if (t->supports_http) {
             done = configure_client_http(*t, opts.server_name, url, token, &error);
             how = "  (shared service)";
             if (t->toml) any_codex = true;
         } else {
-            done = configure_client_bridge(*t, opts.server_name, opts.command, url, &error);
+            done = configure_client_bridge(*t, opts.server_name, client_command, url, &error);
             how = "  (shared service, via bridge)";
             any_bridged = true;
         }
