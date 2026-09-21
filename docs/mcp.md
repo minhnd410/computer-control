@@ -168,6 +168,25 @@ a client than no schema at all - it turns a readable payload into a validation
 error. This will change per-tool as individual shapes are pinned down, not in
 one sweep.
 
+### LLM-friendly results
+
+The text content of a tool result is a short status summary. The complete
+bounded payload is in `structuredContent`, so clients should prefer that field
+instead of asking the model to parse repeated table-like prose. List results
+include `returned`, `total`, and `truncated` when a result is bounded. Accessibility
+trees also report `nodes_walked` and a truncation reason.
+
+Shell and clipboard text defaults to 12,000 bytes per field. Pass
+`max_output_bytes` when a larger bounded result is needed; the response reports
+the original byte count and whether truncation occurred. All text truncation is
+UTF-8 safe.
+
+Failures set `isError` and keep the human content to one actionable message.
+They also provide `structuredContent` with `ok: false`, the `action`, and an
+`error` object containing stable `code`, `message`, and optional `remedy` fields.
+Partial result data, such as timeout polling counts, is retained under
+`structuredContent.result`.
+
 ---
 
 ## Tools

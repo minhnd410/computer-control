@@ -255,6 +255,36 @@ TEST(mcp_tools_list_works_statelessly) {
     }
 }
 
+TEST(mcp_compacts_verbose_tool_summaries_without_touching_structured_data) {
+    actions::ActionResult result;
+    result.ok = true;
+    result.text.assign(9000, 'x');
+    result.value = json::Value::object();
+    json::Value windows = json::Value::array();
+    windows.push_back(json::Value::object());
+    result.value.set("windows", windows);
+
+    const std::string summary = mcp::compact_tool_text("windows", result);
+    CHECK_EQ(summary, std::string("Windows: 1 returned."));
+    CHECK_EQ(result.value["windows"].size(), std::size_t{1});
+
+    result.value = json::Value();
+    const std::string bounded = mcp::compact_tool_text("shell", result);
+    CHECK(bounded.size() <= 4096);
+    CHECK(bounded.find("summary truncated") != std::string::npos);
+
+    json::Value bounded_result = json::Value::object();
+    json::Value returned_windows = json::Value::array();
+    returned_windows.push_back(json::Value::object());
+    bounded_result.set("windows", returned_windows);
+    bounded_result.set("returned", 1);
+    bounded_result.set("total", 9);
+    bounded_result.set("truncated", true);
+    result.value = bounded_result;
+    CHECK_EQ(mcp::compact_tool_text("windows", result),
+             std::string("Windows: 1 of 9 returned; results are truncated."));
+}
+
 TEST(mcp_top_level_metadata_works_through_dispatch) {
     mcp::Server server(test_config());
     const std::string request = R"({"jsonrpc":"2.0","id":1,"method":"tools/list","_meta":{)"
@@ -387,6 +417,11 @@ TEST(mcp_a_disabled_tool_reports_itself_as_a_tool_error) {
         server.handle_message(modern("tools/call", R"("name":"screenshot","arguments":{})")));
     CHECK(r["isError"].as_bool());
     CHECK(r["content"][0]["text"].as_string().find("disabled") != std::string::npos);
+    CHECK(!r["structuredContent"]["ok"].as_bool(true));
+    CHECK_EQ(r["structuredContent"]["action"].as_string(), std::string("screenshot"));
+    CHECK_EQ(r["structuredContent"]["error"]["code"].as_string(),
+             std::string("permission_denied"));
+    CHECK(!r["structuredContent"]["error"]["message"].as_string().empty());
 }
 
 // Walks a JSON Schema and reports the nodes that would fail a strict

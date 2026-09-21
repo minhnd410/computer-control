@@ -62,6 +62,18 @@ std::chrono::milliseconds ms(const Value& v, long long fallback) {
     return std::chrono::milliseconds{v.is_null() ? fallback : v.as_int(fallback)};
 }
 
+std::size_t option_limit(const Value& args, const char* field, std::size_t fallback,
+                         std::size_t ceiling) {
+    const long long raw = args.contains(field) ? args[field].as_int(static_cast<long long>(fallback))
+                                               : static_cast<long long>(fallback);
+    return static_cast<std::size_t>(std::clamp<long long>(raw, 1, static_cast<long long>(ceiling)));
+}
+
+std::string bounded_text(const std::string& value, std::size_t limit, bool& truncated) {
+    truncated = value.size() > limit;
+    return text::truncate_utf8(value, limit);
+}
+
 }  // namespace
 
 Modifier parse_modifiers(const Value& v) {
@@ -736,6 +748,7 @@ const std::vector<ActionSpec>& registry() {
             "title":{"type":"string","description":"Fuzzy-matched alternative to window_id."},
             "bounds":{"description":"Required for mode=bounds.",)" CC_RECT R"(},
             "state":{"description":"Target state for mode=state.","type":"string","enum":["normal","minimized","maximized","fullscreen","hidden"]},
+            "limit":{"description":"Maximum windows returned by mode=list.","type":"integer","default":50,"maximum":500},
             "include_offscreen":{"description":"Include windows on other Spaces or minimised.","type":"boolean","default":false}}})",
          false, true},
 
@@ -747,6 +760,7 @@ const std::vector<ActionSpec>& registry() {
             "args":{"description":"Arguments passed to the executable on launch.","type":"array","items":{"type":"string"}},
             "cwd":{"description":"Working directory for launch.","type":"string"},
             "pid":{"description":"Which process to act on, instead of matching by name.","type":"integer"},
+            "limit":{"description":"Maximum applications returned by mode=list.","type":"integer","default":50,"maximum":500},
             "force":{"description":"Kill rather than asking the app to quit. Unsaved work is lost.","type":"boolean","default":false},
             "timeout_ms":{"description":"How long to wait for the app to appear or exit.","type":"integer","default":8000}}})",
          false, true},
@@ -791,13 +805,16 @@ const std::vector<ActionSpec>& registry() {
             "path":{"description":"For select: the item to invoke, as [\"File\",\"Save\"] or \"File > Save\".",
                     "oneOf":[{"type":"array","items":{"type":"string"}},{"type":"string"}]},
             "depth":{"type":"integer","default":1,
-                     "description":"How far to descend. 1 gives each top-level menu and its items; 2 also opens their submenus."}}})",
+                     "description":"How far to descend. 1 gives each top-level menu and its items; 2 also opens their submenus."},
+                "limit":{"type":"integer","default":200,"maximum":1000,
+                     "description":"Maximum menu items returned by mode=list."}}})",
          false, false},
 
         {"clipboard", "Clipboard", "Read or write the clipboard.",
          R"({"type":"object","properties":{
             "mode":{"description":"read returns the current contents; write replaces them.","type":"string","enum":["get","set"],"default":"get"},
-            "text":{"description":"What to put on the clipboard, for mode=write.","type":"string"}}})",
+            "text":{"description":"What to put on the clipboard, for mode=write.","type":"string"},
+            "max_output_bytes":{"description":"Maximum clipboard text returned by mode=get.","type":"integer","default":12000,"maximum":262144}}})",
          false, false},
 
         {"shell", "Shell",
@@ -807,7 +824,8 @@ const std::vector<ActionSpec>& registry() {
             "command":{"description":"The command line to run. On Windows this goes to PowerShell unless interpreter says otherwise.","type":"string"},
             "shell":{"type":"string","description":"Override the interpreter; \"osascript\" on macOS."},
             "cwd":{"description":"Working directory for the command.","type":"string"},
-            "timeout_ms":{"description":"Kill the command after this long.","type":"integer","default":30000}}})",
+            "timeout_ms":{"description":"Kill the command after this long.","type":"integer","default":30000},
+            "max_output_bytes":{"description":"Maximum stdout and stderr returned. Larger output is truncated with metadata.","type":"integer","default":12000,"maximum":262144}}})",
          false, true},
 
         {"process", "Process", "List or terminate processes.",
@@ -836,7 +854,8 @@ const std::vector<ActionSpec>& registry() {
             "path":{"description":"Key path, for example HKCU\\\\Software\\\\Example.","type":"string"},
             "name":{"description":"Value name within the key.","type":"string"},
             "value":{"description":"Value to write, for mode=write.","type":"string"},
-            "type":{"description":"Registry value type, for mode=write.","type":"string","default":"String"}}})",
+            "type":{"description":"Registry value type, for mode=write.","type":"string","default":"String"},
+            "limit":{"description":"Maximum entries returned by mode=list.","type":"integer","default":200,"maximum":1000}}})",
          false, true},
 
         {"device", "Device",
@@ -862,6 +881,8 @@ const std::vector<ActionSpec>& registry() {
             "url":{"description":"URL to open, for mode=open_url.","type":"string"},
             "command":{"description":"Command to run on the device, for mode=shell.","type":"string"},
             "booted_only":{"description":"Only list devices that are running.","type":"boolean","default":false},
+            "limit":{"description":"Maximum devices returned by mode=list.","type":"integer","default":50,"maximum":500},
+            "max_output_bytes":{"description":"Maximum device shell output returned.","type":"integer","default":12000,"maximum":262144},
             "kind":{"type":"string","description":"Gesture kind for mode=gesture."},
             "format":{"description":"Screenshot format.","type":"string","enum":["png","jpeg"]}}})",
          false, true},
@@ -1601,7 +1622,10 @@ ActionResult act_windows(Session& s, const Value& args) {
         if (!all) return fail(all.error());
         Value arr = Value::array();
         std::string text;
-        for (const auto& w : all.value()) {
+        const std::size_t total = all.value().size();
+        const std::size_t limit = option_limit(args, "limit", 50, 500);
+        for (std::size_t i = 0; i < std::min(total, limit); ++i) {
+            const auto& w = all.value()[i];
             Value v = Value::object();
             v.set("id", static_cast<long long>(w.id));
             v.set("title", w.title);
@@ -1621,6 +1645,9 @@ ActionResult act_windows(Session& s, const Value& args) {
         }
         Value out = Value::object();
         out.set("windows", arr);
+        out.set("returned", static_cast<long long>(arr.size()));
+        out.set("total", static_cast<long long>(total));
+        if (total > limit) out.set("truncated", true);
         return succeed(text, out);
     }
 
@@ -1671,7 +1698,10 @@ ActionResult act_app(Session& s, const Value& args) {
         if (!apps) return fail(apps.error());
         Value arr = Value::array();
         std::string text;
-        for (const auto& a : apps.value()) {
+        const std::size_t total = apps.value().size();
+        const std::size_t limit = option_limit(args, "limit", 50, 500);
+        for (std::size_t i = 0; i < std::min(total, limit); ++i) {
+            const auto& a = apps.value()[i];
             Value v = Value::object();
             v.set("pid", a.pid);
             v.set("name", a.name);
@@ -1689,6 +1719,9 @@ ActionResult act_app(Session& s, const Value& args) {
         }
         Value out = Value::object();
         out.set("apps", arr);
+        out.set("returned", static_cast<long long>(arr.size()));
+        out.set("total", static_cast<long long>(total));
+        if (total > limit) out.set("truncated", true);
         return succeed(text, out);
     }
     if (mode == "launch") {
@@ -1988,8 +2021,12 @@ ActionResult act_menu(Session& s, const Value& args) {
 
     Value list = Value::array();
     std::string text;
+    const std::size_t limit = option_limit(args, "limit", 200, 1000);
+    std::size_t total = 0;
     for (const auto& e : entries.value()) {
         if (e.separator) continue;
+        ++total;
+        if (list.size() >= limit) continue;
         Value item = Value::object();
         Value path = Value::array();
         for (const auto& part : e.path) path.push_back(part);
@@ -2012,6 +2049,9 @@ ActionResult act_menu(Session& s, const Value& args) {
     Value v = Value::object();
     v.set("pid", static_cast<long long>(pid.value()));
     v.set("items", list);
+    v.set("returned", static_cast<long long>(list.size()));
+    v.set("total", static_cast<long long>(total));
+    if (total > limit) v.set("truncated", true);
     if (text.empty()) text = "That application's menu bar is empty.\n";
     return succeed(text, v);
 }
@@ -2051,7 +2091,12 @@ ActionResult act_elements(Session& s, const Value& args) {
     Value out = Value::object();
     out.set("roots", arr);
     out.set("element_count", static_cast<long long>(tree.value().interactive.size()));
+    out.set("nodes_walked", tree.value().node_count);
     out.set("elapsed_ms", static_cast<long long>(tree.value().elapsed.count()));
+    if (tree.value().truncated) {
+        out.set("truncated", true);
+        out.set("truncation_reason", tree.value().truncation_reason);
+    }
     return succeed(std::to_string(tree.value().interactive.size()) + " interactive elements.", out);
 }
 
@@ -2067,13 +2112,17 @@ ActionResult act_clipboard(Session& s, const Value& args) {
     if (mode == "get") {
         auto c = sys.value()->clipboard_get();
         if (!c) return fail(c.error());
+        const std::size_t limit = option_limit(args, "max_output_bytes", 12000, 262144);
+        bool truncated = false;
         Value v = Value::object();
-        v.set("text", c.value().text);
+        v.set("text", bounded_text(c.value().text, limit, truncated));
+        v.set("text_bytes", static_cast<long long>(c.value().text.size()));
+        if (truncated) v.set("text_truncated", true);
         v.set("has_image", c.value().has_image);
         Value files = Value::array();
         for (const auto& f : c.value().file_paths) files.push_back(f);
         v.set("files", files);
-        return succeed(c.value().text, v);
+        return succeed("Clipboard read.", v);
     }
     if (mode == "set") {
         ClipboardContent c;
@@ -2103,10 +2152,19 @@ ActionResult act_shell(Session& s, const Value& args) {
     auto r = sys.value()->run_shell(req);
     if (!r) return fail(r.error());
 
+    const std::size_t limit = option_limit(args, "max_output_bytes", 12000, 262144);
+    bool stdout_truncated = false;
+    bool stderr_truncated = false;
+    const std::string stdout_text = bounded_text(r.value().stdout_text, limit, stdout_truncated);
+    const std::string stderr_text = bounded_text(r.value().stderr_text, limit, stderr_truncated);
     Value v = Value::object();
     v.set("exit_code", r.value().exit_code);
-    v.set("stdout", r.value().stdout_text);
-    v.set("stderr", r.value().stderr_text);
+    v.set("stdout", stdout_text);
+    v.set("stderr", stderr_text);
+    v.set("stdout_bytes", static_cast<long long>(r.value().stdout_text.size()));
+    v.set("stderr_bytes", static_cast<long long>(r.value().stderr_text.size()));
+    if (stdout_truncated) v.set("stdout_truncated", true);
+    if (stderr_truncated) v.set("stderr_truncated", true);
     v.set("timed_out", r.value().timed_out);
     v.set("elapsed_ms", static_cast<long long>(r.value().elapsed.count()));
 
@@ -2224,12 +2282,17 @@ ActionResult act_registry(Session& s, const Value& args) {
         if (!v) return fail(v.error());
         Value arr = Value::array();
         std::string text;
-        for (const auto& e : v.value()) {
-            arr.push_back(e);
-            text += e + "\n";
+        const std::size_t total = v.value().size();
+        const std::size_t limit = option_limit(args, "limit", 200, 1000);
+        for (std::size_t i = 0; i < std::min(total, limit); ++i) {
+            arr.push_back(v.value()[i]);
+            text += v.value()[i] + "\n";
         }
         Value out = Value::object();
         out.set("entries", arr);
+        out.set("returned", static_cast<long long>(arr.size()));
+        out.set("total", static_cast<long long>(total));
+        if (total > limit) out.set("truncated", true);
         return succeed(text, out);
     }
     return fail(ErrorCode::InvalidArgument, "registry mode must be get, set, delete or list");

@@ -66,6 +66,13 @@ DeviceTransport transport_from(const Value& v) {
     return DeviceTransport::Auto;
 }
 
+std::size_t device_limit(const Value& args, const char* field, std::size_t fallback,
+                         std::size_t ceiling) {
+    const long long raw = args.contains(field) ? args[field].as_int(static_cast<long long>(fallback))
+                                               : static_cast<long long>(fallback);
+    return static_cast<std::size_t>(std::clamp<long long>(raw, 1, static_cast<long long>(ceiling)));
+}
+
 }  // namespace
 
 ActionResult act_device(Session& s, const Value& args) {
@@ -80,7 +87,10 @@ ActionResult act_device(Session& s, const Value& args) {
 
         Value arr = Value::array();
         std::string text;
-        for (const auto& d : list.value()) {
+        const std::size_t total = list.value().size();
+        const std::size_t limit = device_limit(args, "limit", 50, 500);
+        for (std::size_t i = 0; i < std::min(total, limit); ++i) {
+            const auto& d = list.value()[i];
             arr.push_back(device_json(d));
             char buf[160];
             text += text::pad_utf8(d.name, 26);
@@ -90,6 +100,9 @@ ActionResult act_device(Session& s, const Value& args) {
         }
         Value out = Value::object();
         out.set("devices", arr);
+        out.set("returned", static_cast<long long>(arr.size()));
+        out.set("total", static_cast<long long>(total));
+        if (total > limit) out.set("truncated", true);
         Value tooling = Value::array();
         for (const auto& t : dm.value()->available_tooling()) tooling.push_back(t);
         out.set("tooling", tooling);
@@ -313,9 +326,13 @@ ActionResult act_device(Session& s, const Value& args) {
     if (mode == "shell") {
         auto out = dev->shell(args["command"].as_string());
         if (!out) return fail_(out.error().code, out.error().message, out.error().remedy);
+        const std::size_t limit = device_limit(args, "max_output_bytes", 12000, 262144);
+        const bool truncated = out.value().size() > limit;
         Value v = Value::object();
-        v.set("output", out.value());
-        return ok_(out.value(), v);
+        v.set("output", text::truncate_utf8(out.value(), limit));
+        v.set("output_bytes", static_cast<long long>(out.value().size()));
+        if (truncated) v.set("output_truncated", true);
+        return ok_("Device shell output returned.", v);
     }
 
     if (mode == "install") {

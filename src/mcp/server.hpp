@@ -9,6 +9,10 @@
 #include "core/json.hpp"
 #include "mcp/config.hpp"
 
+namespace cc::actions {
+struct ActionResult;
+}
+
 namespace cc::mcp {
 
 // A transport moves newline- or Content-Length-framed JSON-RPC messages.
@@ -60,5 +64,9 @@ json::Value tool_definitions(const ServerConfig& cfg);
 
 // Server instructions handed to the client during initialize.
 const char* server_instructions();
+
+// Converts verbose action summaries into compact MCP content while leaving
+// structuredContent available for clients that need every returned field.
+std::string compact_tool_text(std::string_view name, const actions::ActionResult& result);
 
 }  // namespace cc::mcp

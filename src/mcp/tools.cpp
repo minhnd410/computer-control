@@ -51,6 +51,11 @@ const char* server_instructions() {
            "Batch. Each call costs a model round trip that dwarfs the action itself. When you can "
            "predict a sequence - click a field, type, press Return - send it as one `batch`.\n"
            "\n"
+           "Tool results keep the content summary short; use structuredContent for the complete "
+           "bounded fields. List results report returned/total/truncated, and shell or clipboard "
+           "text is capped unless you pass a larger max_output_bytes. Failures include a stable "
+           "structuredContent error with code, message and remedy.\n"
+           "\n"
            "After an interrupted drag, call `release_all` so no button is left held.";
 }
 

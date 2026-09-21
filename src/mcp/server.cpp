@@ -6,6 +6,7 @@
 
 #include "actions/actions.hpp"
 #include "cc/screen.hpp"
+#include "core/text.hpp"
 #include "mcp/protocol.hpp"
 
 namespace cc::mcp {
@@ -45,11 +46,117 @@ json::Value rpc_result(const json::Value& id, json::Value result) {
     return out;
 }
 
+constexpr std::size_t kMaxToolTextBytes = 4096;
+
+std::string bounded_tool_text(std::string_view value) {
+    if (value.size() <= kMaxToolTextBytes) return std::string(value);
+    constexpr std::string_view marker =
+        "\n[summary truncated; use structuredContent for complete fields]";
+    return text::truncate_utf8(value, kMaxToolTextBytes - marker.size()) + std::string(marker);
+}
+
+std::string collection_summary(std::string_view label, std::size_t count,
+                               const json::Value& value) {
+    const std::size_t returned = static_cast<std::size_t>(
+        std::max<std::int64_t>(0, value["returned"].as_int(static_cast<std::int64_t>(count))));
+    const std::size_t total = static_cast<std::size_t>(
+        std::max<std::int64_t>(static_cast<std::int64_t>(returned),
+                               value["total"].as_int(static_cast<std::int64_t>(returned))));
+    std::string out = std::string(label) + ": " + std::to_string(returned);
+    if (total > returned || value["truncated"].as_bool(false)) {
+        out += " of " + std::to_string(total) + " returned; results are truncated";
+        const std::string reason = value["truncation_reason"].as_string();
+        if (!reason.empty()) out += " (" + reason + ")";
+        out += ".";
+    } else {
+        out += " returned.";
+    }
+    return out;
+}
+
+json::Value error_structured(std::string_view action, const Error& error,
+                             const json::Value* partial = nullptr) {
+    json::Value out = json::Value::object();
+    out.set("ok", false);
+    out.set("action", std::string(action));
+
+    json::Value detail = json::Value::object();
+    detail.set("code", to_string(error.code));
+    detail.set("message", error.message);
+    if (!error.remedy.empty()) detail.set("remedy", error.remedy);
+    out.set("error", detail);
+    if (partial && !partial->is_null()) out.set("result", *partial);
+    return out;
+}
+
 void log(const ServerConfig& cfg, const std::string& msg) {
     if (cfg.log_requests) std::cerr << "[computer-control] " << msg << "\n";
 }
 
+std::string compact_tool_text_impl(std::string_view name, const actions::ActionResult& result) {
+    if (!result.ok || result.value.is_null()) return bounded_tool_text(result.text);
+
+    const json::Value& value = result.value;
+    if (name == "snapshot" && value["elements"].is_array()) {
+        return collection_summary("Snapshot", value["elements"].size(), value);
+    }
+    if (name == "elements" && value["roots"].is_array()) {
+        return collection_summary("Accessibility tree", value["element_count"].as_int(), value);
+    }
+    if (name == "windows" && value["windows"].is_array()) {
+        return collection_summary("Windows", value["windows"].size(), value);
+    }
+    if (name == "app" && value["apps"].is_array()) {
+        return collection_summary("Applications", value["apps"].size(), value);
+    }
+    if (name == "menu" && value["items"].is_array()) {
+        return collection_summary("Menu items", value["items"].size(), value);
+    }
+    if (name == "process" && value["processes"].is_array()) {
+        return collection_summary("Processes", value["processes"].size(), value);
+    }
+    if (name == "device" && value["devices"].is_array()) {
+        return collection_summary("Devices", value["devices"].size(), value);
+    }
+    if (name == "registry" && value["entries"].is_array()) {
+        return collection_summary("Registry entries", value["entries"].size(), value);
+    }
+    if (name == "batch" && value["steps"].is_array()) {
+        if (value.contains("failed_at")) {
+            return "Batch stopped at step " + std::to_string(value["failed_at"].as_int()) + ".";
+        }
+        return "Batch completed " + std::to_string(value["steps"].size()) + " steps.";
+    }
+    if (name == "shell" && (value.contains("stdout") || value.contains("stderr"))) {
+        std::string out = "Command exited with code " + std::to_string(value["exit_code"].as_int()) +
+                          "; stdout " + std::to_string(value["stdout_bytes"].as_int(
+                              value["stdout"].as_string().size())) + " bytes; stderr " +
+                          std::to_string(value["stderr_bytes"].as_int(
+                              value["stderr"].as_string().size())) + " bytes.";
+        if (value["timed_out"].as_bool(false)) out += " Timed out.";
+        if (value["stdout_truncated"].as_bool(false) || value["stderr_truncated"].as_bool(false))
+            out += " Output truncated.";
+        return out;
+    }
+    if (name == "clipboard" && value.contains("text")) {
+        std::string out = "Clipboard read: " +
+                          std::to_string(value["text_bytes"].as_int(value["text"].as_string().size())) +
+                          " bytes.";
+        if (value["has_image"].as_bool(false)) out += " Includes an image.";
+        if (value["has_files"].as_bool(false) ||
+            (value["files"].is_array() && value["files"].size() > 0))
+            out += " Includes files.";
+        if (value["text_truncated"].as_bool(false)) out += " Text truncated.";
+        return out;
+    }
+    return bounded_tool_text(result.text);
+}
+
 }  // namespace
+
+std::string compact_tool_text(std::string_view name, const actions::ActionResult& result) {
+    return compact_tool_text_impl(name, result);
+}
 
 Server::Server(ServerConfig cfg) : cfg_(std::move(cfg)) {}
 Server::~Server() = default;
@@ -121,6 +228,9 @@ json::Value Server::handle_tools_call(const json::Value& params, bool& is_error)
         content.push_back(t);
         json::Value out = json::Value::object();
         out.set("content", content);
+        Error error{ErrorCode::PermissionDenied, "tool is disabled on this server",
+                "Enable the tool in the server configuration before calling it."};
+        out.set("structuredContent", error_structured(name, error));
         out.set("isError", true);
         return out;
     }
@@ -139,6 +249,7 @@ json::Value Server::handle_tools_call(const json::Value& params, bool& is_error)
             content.push_back(t);
             json::Value out = json::Value::object();
             out.set("content", content);
+            out.set("structuredContent", error_structured(name, s.error()));
             out.set("isError", true);
             return out;
         }
@@ -150,10 +261,11 @@ json::Value Server::handle_tools_call(const json::Value& params, bool& is_error)
 
     json::Value content = json::Value::array();
 
-    if (!result.text.empty()) {
+    const std::string summary = result.ok ? compact_tool_text(name, result) : std::string{};
+    if (!summary.empty()) {
         json::Value t = json::Value::object();
         t.set("type", "text");
-        t.set("text", result.text);
+        t.set("text", summary);
         content.push_back(t);
     }
 
@@ -186,7 +298,11 @@ json::Value Server::handle_tools_call(const json::Value& params, bool& is_error)
     out.set("content", content);
     // Structured output alongside the text: clients that can use it get exact
     // numbers instead of re-parsing a human-readable summary.
-    if (!result.value.is_null()) out.set("structuredContent", result.value);
+    if (result.ok && !result.value.is_null()) {
+        out.set("structuredContent", result.value);
+    } else if (!result.ok) {
+        out.set("structuredContent", error_structured(name, result.error, &result.value));
+    }
     if (is_error) out.set("isError", true);
     return out;
 }
