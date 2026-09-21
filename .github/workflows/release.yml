@@ -261,3 +261,94 @@ jobs:
           git diff --cached --quiet && { echo "formula unchanged"; exit 0; }
           git commit -m "computer-control $VERSION"
           git push
+
+  winget:
+    name: Update Winget manifest
+    needs: publish
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.WINGET_PKGS_TOKEN }}
+      WINGET_PKGS_TOKEN: ${{ secrets.WINGET_PKGS_TOKEN }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Skip when Winget credentials are not configured
+        if: env.WINGET_PKGS_TOKEN == ''
+        shell: pwsh
+        run: |
+          "WINGET_PKGS_TOKEN is not configured; skipping the Winget PR." >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/checkout@v4
+        if: env.WINGET_PKGS_TOKEN != ''
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        if: env.WINGET_PKGS_TOKEN != ''
+        with:
+          python-version: "3.11"
+
+      - name: Render and validate the Winget manifest
+        if: env.WINGET_PKGS_TOKEN != ''
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $assetUrl = "https://github.com/minhnd410/computer-control/releases/download/$($env:TAG)/computer-control-windows-x86_64.zip"
+          $archive = Join-Path $env:RUNNER_TEMP "computer-control-windows-x86_64.zip"
+          $generated = Join-Path $env:RUNNER_TEMP "computer-control-winget"
+          Invoke-WebRequest -Uri $assetUrl -OutFile $archive
+          $sha256 = (Get-FileHash $archive -Algorithm SHA256).Hash
+          python packaging/winget/render_manifests.py `
+            --version $version `
+            --installer-url $assetUrl `
+            --sha256 $sha256 `
+            --template-dir packaging/winget `
+            --output $generated
+          winget validate --manifest $generated
+          "Winget manifest validated for $version`n`n- Asset: $assetUrl`n- SHA256: $sha256" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Update fork and open pull request
+        if: env.WINGET_PKGS_TOKEN != ''
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $branch = "computer-control-$version"
+          $fork = Join-Path $env:RUNNER_TEMP "winget-pkgs"
+          $generated = Join-Path $env:RUNNER_TEMP "computer-control-winget"
+          gh repo clone minhnd410/winget-pkgs $fork -- --branch master --depth 1
+          git -C $fork fetch origin $branch 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            git -C $fork switch -C $branch "origin/$branch"
+          } else {
+            git -C $fork switch -c $branch
+          }
+          $packageRoot = Join-Path $fork "manifests/m/minhnd410/computer-control"
+          if (Test-Path $packageRoot) { Remove-Item $packageRoot -Recurse -Force }
+          New-Item $packageRoot -ItemType Directory -Force | Out-Null
+          Copy-Item (Join-Path $generated $version) $packageRoot -Recurse
+          git -C $fork config user.name "github-actions[bot]"
+          git -C $fork config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C $fork add manifests/m/minhnd410/computer-control
+          if (git -C $fork diff --cached --quiet) {
+            "Winget branch $branch already contains the generated manifests." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            git -C $fork commit -m "Update computer-control to $version"
+            git -C $fork push --force-with-lease origin $branch
+          }
+          $pr = gh pr list --repo microsoft/winget-pkgs --head "minhnd410:$branch" --state open --json number --jq ".[0].number"
+          if ([string]::IsNullOrWhiteSpace($pr)) {
+            $body = @"
+          ### Update package: `minhnd410.computer-control` $version
+
+          - Release: https://github.com/minhnd410/computer-control/releases/tag/$($env:TAG)
+          - Windows x64 portable ZIP
+          - SHA256 calculated by this workflow
+          - Manifest validated with `winget validate --manifest`
+          "@
+            $bodyFile = Join-Path $env:RUNNER_TEMP "winget-pr.md"
+            $body | Set-Content $bodyFile
+            gh pr create --repo microsoft/winget-pkgs --head "minhnd410:$branch" --base master `
+              --title "Update package: minhnd410.computer-control version $version" `
+              --body-file $bodyFile
+          } else {
+            Write-Output "Updated existing Winget PR #$pr on branch $branch"
+          }
