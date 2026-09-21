@@ -1,14 +1,14 @@
 <!-- Split out of the README; see the table of contents there. -->
 # Architecture
 
-For contributors. [CLAUDE.md](../CLAUDE.md) has the invariants that break
-subtly if you get them wrong; this is the map.
+This is the current source layout and runtime flow. Repository invariants are
+listed in [CLAUDE.md](../CLAUDE.md).
 
 ```
 include/cc/*.hpp     Public C++ API.
 src/core/            Platform-independent: coordinate math, motion and gesture
                      geometry, JSON, PNG/JPEG codecs, deflate, UTF-8.
-                     No OS headers here, ever.
+                     No OS headers.
 src/platform/macos/    CGEvent, ScreenCaptureKit, AXUIElement
 src/platform/windows/  SendInput, InjectTouchInput, UI Automation, GDI
 src/platform/linux/    XTest, /dev/uinput, EWMH, AT-SPI2
@@ -16,7 +16,7 @@ src/devices/         Simulator, emulator and mirrored-device transports.
 src/actions/         The single action dispatcher: JSON in, JSON out.
 src/mcp/             MCP server. A schema wrapper over the dispatcher, and the
                      only executable this project produces.
-tests/               A ~60-line harness; no test framework dependency.
+tests/               Unit and protocol tests.
 ```
 
 Each platform directory holds the same six backends — display, input, screen,
@@ -37,10 +37,8 @@ counts are checked against it, and every schema is validated.
 
 ## Lazy backends
 
-`Session` creates each backend on first use. This is load-bearing on macOS: a
-caller that only wants screenshots must never trigger an accessibility prompt,
-because the prompt is attributed to the responsible process and asking for a
-permission you do not need is how a user ends up denying one you do.
+`Session` creates each backend on first use. A screenshot-only call therefore
+does not initialize the accessibility backend.
 
 ## Coordinates
 
@@ -50,12 +48,12 @@ is the chokepoint for anything user-supplied and rejects points outside the
 desktop rather than emitting a click that silently goes nowhere.
 [Coordinate spaces](coordinate-spaces.md) has the model.
 
-## No dependencies
+## Runtime dependencies
 
-JSON, PNG, JPEG and deflate are all in-tree. That is deliberate: the selling
-point is a binary you drop somewhere and run, on three platforms, with no
-runtime to install. System zlib is used when found and the bundled encoder
-otherwise.
+The executable uses the platform APIs and libraries listed in
+[installation](install.md#runtime-requirements). JSON, image codecs, and
+deflate support are included in the source tree; system zlib is used when
+available.
 
 ## Building
 

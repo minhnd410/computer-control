@@ -395,6 +395,13 @@ ActionResult act_device(Session& s, const Value& args) {
         }
         Value out = Value::object();
         out.set("elements", arr);
+        out.set("element_count", static_cast<long long>(arr.size()));
+        out.set("returned", static_cast<long long>(arr.size()));
+        out.set("nodes_walked", tree.value().node_count);
+        if (tree.value().truncated) {
+            out.set("truncated", true);
+            out.set("truncation_reason", tree.value().truncation_reason);
+        }
         out.set("note",
                 "Coordinates are in device pixels/points; pass them straight to "
                 "mode=\"tap\".");

@@ -2402,7 +2402,6 @@ ActionResult run_batch(Session& session, const Value& actions) {
         entry.set("index", static_cast<long long>(i));
         entry.set("action", action);
         entry.set("ok", one.ok);
-        if (!one.text.empty()) entry.set("text", one.text);
         if (!one.value.is_null()) entry.set("result", one.value);
         if (!one.ok) {
             entry.set("error", one.error.message);

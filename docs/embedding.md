@@ -55,11 +55,8 @@ because the `cc_config` interface target carries all of them.
 
 ## Other languages
 
-There is no C ABI and no Python binding; both were removed as surface
-maintained for a use case this project does not have. To drive this from
-another language, speak MCP to the server. It is a line-delimited JSON-RPC
-conversation on stdin and stdout, which any language can hold without a client
-library:
+Use MCP from another language. The stdio server exchanges line-delimited
+JSON-RPC on stdin and stdout:
 
 ```bash
 echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{

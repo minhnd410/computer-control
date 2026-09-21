@@ -5,12 +5,11 @@
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
 
-**Let a model drive your desktop — and the phones on it.**
+**Cross-platform desktop and mobile automation over MCP.**
 
-One small binary, no runtime, no dependencies. Point any MCP client at it and
-the model gets 34 tools: screenshots, clicks, typing, multi-touch gestures,
-window and app control, the accessibility tree, and any iOS simulator, Android
-emulator or mirrored handset visible on screen. macOS, Windows and Linux.
+One native binary gives an MCP client screenshots, input, accessibility queries,
+window and app control, gestures, shell and clipboard controls, and device
+automation. It runs on macOS, Windows and Linux.
 
 ---
 
@@ -44,11 +43,11 @@ Or take the archive straight from
 [Releases](https://github.com/minhnd410/computer-control/releases).
 
 Needs **macOS 14+**, Windows 10+, or a Linux desktop with the X11 client
-libraries — [the full list](docs/install.md#what-it-still-needs). No runtime,
+libraries — [the full list](docs/install.md#runtime-requirements). No runtime,
 no toolchain. The installers check first and stop with the remedy rather than
 leaving you a binary that will not start.
 
-### Building it yourself
+### Build from source
 
 Only if you want to change it, or you are on a platform with no archive:
 [docs/install.md](docs/install.md).
@@ -87,30 +86,23 @@ computer-control-mcp setup --client cursor,zed    # no prompts
 computer-control-mcp --doctor                     # permissions and capabilities
 ```
 
-On **macOS two permissions are still required** — Accessibility for input and
-the element tree, Screen Recording for captures. `setup` asks for them. If one
-is missing, tools now refuse with a message naming the settings pane rather
-than appearing to work; `--doctor` shows the current state. See
+On **macOS**, Accessibility is required for input and the element tree, and
+Screen Recording is required for captures. `setup` asks for them. If one is
+missing, the affected tool returns an actionable error and `--doctor` shows the
+current state. See
 [permissions](docs/permissions.md).
 
 Using **Claude Code inside WSL**? Install the *Windows* build and have WSL
 launch it. A Linux binary inside WSL cannot reach the Windows desktop:
-[why](docs/wsl.md).
+[WSL setup](docs/wsl.md).
 
 ---
 
-## What it can do
+## Current surface
 
-| | |
-|---|---|
-| **See** | Screenshot the desktop, a display, a window or a region. `snapshot` adds the accessibility tree with every clickable element numbered. `zoom` re-reads small text at full resolution. |
-| **Find** | `find` locates something by its text and scrolls to reach it, returning coordinates — instead of capturing a long page screen by screen. |
-| **Point** | Move, click (single, double, triple, hover), five buttons, scroll by line or by pixel, drag and drop, freehand strokes. |
-| **Type** | Chords like `cmd+shift+a`, sequences, hold-for-duration, and Unicode typed directly — emoji and CJK do not depend on your keyboard layout. |
-| **Touch** | Pinch, rotate, n-finger swipe and pan, long press, force press, edge swipe. Up to 10 contacts where the OS allows it. |
-| **Manage** | List, focus, move, resize and close windows. Launch and quit apps. Open the launcher, switch desktops, show notifications. |
-| **Menus** | Read an application's whole menu bar and invoke any item by path — including commands with no button and no shortcut. macOS for now. |
-| **Phones** | Drive an iOS simulator, Android emulator or mirrored handset in its own coordinate space. |
+The server exposes the live action registry as MCP tools. See the [tool
+reference](docs/tools.md) for the complete list, arguments, platform support,
+safety gates, and examples.
 
 Two things worth knowing before you trust it with anything:
 
@@ -129,28 +121,15 @@ table](docs/gestures.md).
 
 ---
 
-## What has actually been tested
+## Verification status
 
-A row here means a person ran that code on that machine. CI compiling it is not
-the same thing and is listed separately.
+Every push builds the native server and runs the test suite on macOS arm64,
+macOS x86_64, Windows with MSVC, and Linux with GCC and Clang under Xvfb.
+Platform capabilities and permissions still depend on the desktop where the
+server runs. Use `computer-control-mcp --doctor` to inspect the active host.
 
-| OS | Tested by | Exercised |
-|---|---|---|
-| macOS 26.6, Apple silicon | maintainer | capture, pointer, clicks, drag, stroke, gestures, accessibility tree, permissions, launcher, search, shell, simulator discovery |
-| Debian 12 under Xvfb | maintainer, in a container since removed | capture, pointer, clicks, Unicode typing, chords, emulated gestures |
-| Windows 11 | maintainer, **before the current code** | PowerShell and trackpad swipes were both found broken here and rewritten; **the rewrites have never run on Windows** |
-
-Compiled and unit-tested on every push: macOS (arm64 + x86_64), Windows (MSVC),
-Linux (gcc + clang, under Xvfb).
-
-**Not exercised by anyone:** the Windows backend since those rewrites, the Linux
-`/dev/uinput` native-gesture path, macOS on Intel, any BSD, any non-Debian
-distribution.
-
-**Running it anywhere not in that table is the most useful contribution you can
-make** — even with no code. [Open an
-issue](https://github.com/minhnd410/computer-control/issues) with the output of
-`computer-control-mcp --doctor`. See [CONTRIBUTING](CONTRIBUTING.md).
+For a manual platform report, include the output of `--doctor` when opening an
+[issue](https://github.com/minhnd410/computer-control/issues).
 
 ---
 

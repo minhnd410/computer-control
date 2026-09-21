@@ -283,6 +283,22 @@ TEST(mcp_compacts_verbose_tool_summaries_without_touching_structured_data) {
     result.value = bounded_result;
     CHECK_EQ(mcp::compact_tool_text("windows", result),
              std::string("Windows: 1 of 9 returned; results are truncated."));
+
+    json::Value tree_result = json::Value::object();
+    tree_result.set("elements", returned_windows);
+    tree_result.set("returned", 1);
+    tree_result.set("truncated", true);
+    result.value = tree_result;
+    CHECK_EQ(mcp::compact_tool_text("device", result),
+             std::string("Device elements: 1 returned; results are truncated."));
+}
+
+TEST(mcp_success_structured_content_identifies_the_action) {
+    mcp::Server server(test_config());
+    const auto result = result_of(
+        server.handle_message(modern("tools/call", R"("name":"wait","arguments":{"ms":0})")));
+    CHECK(result["structuredContent"]["ok"].as_bool(false));
+    CHECK_EQ(result["structuredContent"]["action"].as_string(), std::string("wait"));
 }
 
 TEST(mcp_top_level_metadata_works_through_dispatch) {

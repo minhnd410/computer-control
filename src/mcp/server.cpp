@@ -63,14 +63,25 @@ std::string collection_summary(std::string_view label, std::size_t count,
         std::max<std::int64_t>(static_cast<std::int64_t>(returned),
                                value["total"].as_int(static_cast<std::int64_t>(returned))));
     std::string out = std::string(label) + ": " + std::to_string(returned);
-    if (total > returned || value["truncated"].as_bool(false)) {
-        out += " of " + std::to_string(total) + " returned; results are truncated";
+    if (value["truncated"].as_bool(false)) {
+        if (value.contains("total")) out += " of " + std::to_string(total);
+        out += " returned; results are truncated";
         const std::string reason = value["truncation_reason"].as_string();
         if (!reason.empty()) out += " (" + reason + ")";
         out += ".";
+    } else if (total > returned) {
+        out += " of " + std::to_string(total) + " returned; results are truncated.";
     } else {
         out += " returned.";
     }
+    return out;
+}
+
+json::Value success_structured(std::string_view action, const json::Value& data) {
+    json::Value out = data.is_object() ? data : json::Value::object();
+    if (!data.is_object()) out.set("data", data);
+    out.set("ok", true);
+    out.set("action", std::string(action));
     return out;
 }
 
@@ -100,6 +111,11 @@ std::string compact_tool_text_impl(std::string_view name, const actions::ActionR
     if (name == "snapshot" && value["elements"].is_array()) {
         return collection_summary("Snapshot", value["elements"].size(), value);
     }
+    if (name == "snapshot" && value.contains("tree_error")) {
+        return value.contains("screenshot")
+                   ? "Screenshot captured; accessibility tree unavailable."
+                   : "Accessibility tree unavailable.";
+    }
     if (name == "elements" && value["roots"].is_array()) {
         return collection_summary("Accessibility tree", value["element_count"].as_int(), value);
     }
@@ -118,8 +134,36 @@ std::string compact_tool_text_impl(std::string_view name, const actions::ActionR
     if (name == "device" && value["devices"].is_array()) {
         return collection_summary("Devices", value["devices"].size(), value);
     }
+    if (name == "device" && value["elements"].is_array()) {
+        return collection_summary("Device elements", value["elements"].size(), value);
+    }
     if (name == "registry" && value["entries"].is_array()) {
         return collection_summary("Registry entries", value["entries"].size(), value);
+    }
+    if (name == "displays" && value["displays"].is_array()) {
+        return collection_summary("Displays", value["displays"].size(), value);
+    }
+    if (name == "permissions" && value["permissions"].is_array()) {
+        return std::string("Permissions: ") +
+               (value["all_granted"].as_bool(false) ? "all granted" : "action required") +
+               " (" + std::to_string(value["permissions"].size()) + " checked).";
+    }
+    if (name == "system" && value["actions"].is_array()) {
+        std::size_t supported = 0;
+        for (const auto& action : value["actions"].as_array()) {
+            if (action["supported"].as_bool(false)) ++supported;
+        }
+        return "System actions: " + std::to_string(supported) + " of " +
+               std::to_string(value["actions"].size()) + " supported.";
+    }
+    if (name == "capabilities" && value.is_object()) {
+        std::size_t available = 0;
+        for (const auto& [_, backend] : value["backends"].as_object()) {
+            if (backend["available"].as_bool(false)) ++available;
+        }
+        return "Capabilities: " + value["platform"].as_string() + ", " +
+               std::to_string(value["displays"].size()) + " display(s), " +
+               std::to_string(available) + " backend(s) available.";
     }
     if (name == "batch" && value["steps"].is_array()) {
         if (value.contains("failed_at")) {
@@ -299,7 +343,7 @@ json::Value Server::handle_tools_call(const json::Value& params, bool& is_error)
     // Structured output alongside the text: clients that can use it get exact
     // numbers instead of re-parsing a human-readable summary.
     if (result.ok && !result.value.is_null()) {
-        out.set("structuredContent", result.value);
+        out.set("structuredContent", success_structured(name, result.value));
     } else if (!result.ok) {
         out.set("structuredContent", error_structured(name, result.error, &result.value));
     }

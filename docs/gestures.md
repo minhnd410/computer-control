@@ -27,15 +27,9 @@ rather than accept one silently.
 
 `InjectTouchInput` produces real touch contacts, up to ten.
 
-A **multi-finger trackpad swipe cannot be synthesized at all**, and this is
-architectural rather than a bug waiting to be fixed. Windows interprets those
-gestures inside the Precision Touchpad driver, from HID reports; injected
-contacts are *touchscreen* input and go to the window underneath. There is no
-API that makes the shell believe four fingers moved on a touchpad.
-
-So three- and four-finger swipes are routed to the shortcuts that driver
-invokes: four fingers switch virtual desktops, three switch apps. The effect a
-user sees is the same; the mechanism is not, and `capabilities` says so.
+Windows reports touchscreen contacts as native input. Trackpad-style
+three- and four-finger swipes are exposed through the corresponding desktop
+shortcuts, and `capabilities` reports that fidelity.
 
 ## Linux
 

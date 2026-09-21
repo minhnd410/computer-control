@@ -107,15 +107,9 @@ forwarding those requests. A legacy `initialize` handshake is forwarded
 unchanged. Requests that include a protocol version but omit the required
 `clientCapabilities` field still return `-32602`.
 
-2025-11-25 is the newest handshake-based revision and is what clients actually
-send today — Claude Code opens with exactly it. Everything it added over
-2025-06-18 is optional (icons, experimental tasks), client-side (elicitation,
-sampling tool calls), OAuth for HTTP, or a clarification; the one requirement
-that lands on a server like this is Origin validation, below.
-
-2026-07-28 made the protocol stateless. There is no handshake: every request
-carries its own protocol version and client capabilities, so the server holds
-no per-connection state and a request can be served in isolation. In practice:
+The 2026-07-28 path is stateless: every request carries its own protocol
+version and client capabilities. Older handshake clients are supported through
+the compatibility path.
 
 - `server/discover` is mandatory and answers without any handshake. It is also
   the compatibility probe - a recognisable answer tells a dual-era client this
@@ -126,9 +120,8 @@ no per-connection state and a request can be served in isolation. In practice:
 - List results (`server/discover`, `tools/list`) carry `ttlMs` and
   `cacheScope`. The tool set is fixed at startup, so it is publicly cacheable
   for an hour.
-- `ping`, `logging/setLevel` and the handshake itself were removed. This server
-  still answers all three, because a 2025-06-18 client sends them and has no
-  way to discover they are gone.
+- Legacy `ping`, `logging/setLevel`, and handshake messages remain accepted for
+  compatibility.
 
 Error codes follow the spec's reserved range:
 
@@ -158,15 +151,12 @@ normally sends none, so an absent header is allowed and a cross-origin one is
 not. The host is matched in full, so `http://localhost.evil.com` is refused
 rather than passing a prefix check.
 
-### No `outputSchema`
+### Output schema
 
-Tools return `structuredContent` alongside their text, but do not declare an
-`outputSchema`. The spec makes the schema a promise: declare one and every
-result must validate against it. Several tools here return shapes that vary
-with what they found on screen, and a schema that is subtly wrong is worse for
-a client than no schema at all - it turns a readable payload into a validation
-error. This will change per-tool as individual shapes are pinned down, not in
-one sweep.
+Tools return `structuredContent` alongside their text. Per-tool output schemas
+are not advertised because collection and platform results vary with the
+desktop state. The stable response envelope is documented in
+[JSON payloads](json-schema.md).
 
 ### LLM-friendly results
 
@@ -175,6 +165,11 @@ bounded payload is in `structuredContent`, so clients should prefer that field
 instead of asking the model to parse repeated table-like prose. List results
 include `returned`, `total`, and `truncated` when a result is bounded. Accessibility
 trees also report `nodes_walked` and a truncation reason.
+
+Successful tool results preserve each tool's existing fields and add
+`structuredContent.ok: true` plus `structuredContent.action`, so a client can
+route results without inspecting the prose summary. Batch results keep the
+structured result for each step but omit repeated human-readable step text.
 
 Shell and clipboard text defaults to 12,000 bytes per field. Pass
 `max_output_bytes` when a larger bounded result is needed; the response reports
@@ -195,10 +190,8 @@ The full list, with what each one is for, is in the
 [tool reference](tools.md). `computer-control-mcp --list-tools` prints the live
 version, marking which tools the current safety flags would hide.
 
-`capabilities` first, then `snapshot` to get numbered elements, then act on
-them by label rather than by pixel. `batch` runs a predictable sequence in one
-round trip, which is usually the difference between a snappy agent and a
-sluggish one.
+Start with `capabilities`, use `snapshot` to get numbered elements, and target
+later input calls by label when possible. Use `batch` for predictable sequences.
 
 ---
 

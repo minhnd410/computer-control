@@ -1,37 +1,90 @@
-# JSON schema
+# JSON payloads
 
-The MCP tools return JSON for anything whose shape is open-ended: window lists,
-accessibility trees, device inventories, shell results. This document is the
-contract for those payloads.
+The server uses MCP JSON-RPC. Tool calls return a short text summary for the
+model and structured data for programs. Fields are additive: clients should
+ignore fields they do not know and treat optional fields as absent.
 
-**Compatibility:** additive only. Fields are added, never removed or retyped.
-Treat an unknown field as ignorable, and never assume an optional field is
-present.
+## Tool result
 
-Every action that produces JSON wraps the payload:
+A successful `tools/call` result has this shape:
 
 ```json
-{ "ok": true, "text": "human-readable summary", "result": { ... } }
+{
+  "content": [{"type": "text", "text": "Processes: 2 returned."}],
+  "structuredContent": {
+    "ok": true,
+    "action": "process",
+    "processes": [
+      {"pid": 1234, "name": "example", "memory_mb": 12.5}
+    ]
+  }
+}
 ```
 
-`text` is what an agent should read; `result` is what a program should parse.
+The text is a compact status summary. `structuredContent` contains the exact
+bounded payload. Screenshots add an image content item:
 
-## Shared types
+```json
+{"type": "image", "data": "<base64>", "mimeType": "image/png"}
+```
+
+A failed tool call has `isError: true`, one actionable text item, and a stable
+structured error:
+
+```json
+{
+  "isError": true,
+  "content": [{"type": "text", "text": "No window matches 'Editor'."}],
+  "structuredContent": {
+    "ok": false,
+    "action": "windows",
+    "error": {
+      "code": "not_found",
+      "message": "no window matches 'Editor'",
+      "remedy": "Check the title and call windows(mode=\"list\") first."
+    }
+  }
+}
+```
+
+When an operation has partial data, it is retained under
+`structuredContent.result`. Error codes are `invalid_argument`,
+`permission_denied`, `unsupported`, `not_found`, `timeout`, `busy`,
+`backend_failure`, `device_error`, `io_error`, or `internal`.
+
+## Coordinates
 
 ### Point
 
 ```json
-{ "x": 640.0, "y": 480.0, "space": "logical" }
+{"x": 640.0, "y": 480.0, "space": "logical"}
 ```
 
-`space` is `logical`, `physical` or `image`. Accepted as input in three forms —
-`[x, y]`, the object above, or `"640,480"` / `"640,480@image"`.
+`space` is `logical`, `physical`, or `image`. Input accepts `[x, y]`, the
+object form, or `"640,480"` / `"640,480@image"`.
 
-### Rect
+### Rectangle
 
 ```json
-{ "x": 0.0, "y": 0.0, "w": 1440.0, "h": 900.0, "space": "logical" }
+{"x": 0.0, "y": 0.0, "w": 1440.0, "h": 900.0, "space": "logical"}
 ```
+
+## Bounded collections
+
+List and tree responses report their bounds when applicable:
+
+```json
+{
+  "windows": [],
+  "returned": 2,
+  "total": 9,
+  "truncated": true
+}
+```
+
+Accessibility responses also report `nodes_walked`, `element_count`, and, when
+a walk stops at a budget, `truncation_reason`. Device tree responses use the
+same fields.
 
 ## Displays
 
@@ -44,16 +97,13 @@ Every action that produces JSON wraps the payload:
     "scale": 2.0,
     "dpi": 144.0,
     "refresh_hz": 60.0,
-    "bounds_logical":  { "x": 0, "y": 0, "w": 1440, "h": 900,  "space": "logical" },
-    "bounds_physical": { "x": 0, "y": 0, "w": 2880, "h": 1800, "space": "physical" },
-    "work_area":       { "x": 0, "y": 25, "w": 1440, "h": 875, "space": "logical" }
+    "bounds_logical": {"x": 0, "y": 0, "w": 1440, "h": 900, "space": "logical"},
+    "bounds_physical": {"x": 0, "y": 0, "w": 2880, "h": 1800, "space": "physical"},
+    "work_area": {"x": 0, "y": 25, "w": 1440, "h": 875, "space": "logical"}
   }],
-  "virtual_bounds": { "x": 0, "y": 0, "w": 1440, "h": 900, "space": "logical" }
+  "virtual_bounds": {"x": 0, "y": 0, "w": 1440, "h": 900, "space": "logical"}
 }
 ```
-
-`scale` is `bounds_physical.w / bounds_logical.w`. On a mixed-DPI setup each
-display has its own, which is why conversion is per display rather than global.
 
 ## Windows
 
@@ -61,109 +111,61 @@ display has its own, which is why conversion is per display rather than global.
 {
   "windows": [{
     "id": 9694,
-    "title": "iPhone 17 Pro Max",
-    "app": "Simulator",
+    "title": "Example",
+    "app": "Editor",
     "pid": 86727,
-    "bounds": { "x": 510, "y": 30, "w": 393, "h": 850, "space": "logical" },
+    "bounds": {"x": 510, "y": 30, "w": 900, "h": 850, "space": "logical"},
     "focused": false,
     "display": 0
   }]
 }
 ```
 
-`id` is a `CGWindowID` on macOS, an `HWND` on Windows and an X11 `Window` on
-Linux. It is only valid while the window exists; re-list rather than caching.
+Window identifiers are valid only while the window exists. Re-list before using
+an identifier after the desktop changes.
 
-## Accessibility element
+## Accessibility elements
 
 ```json
 {
   "label": 7,
   "role": "button",
-  "raw_role": "AXButton",
   "name": "Save",
-  "value": "",
-  "id": "save-button",
-  "bounds": { "x": 100, "y": 200, "w": 80, "h": 24, "space": "logical" },
-  "center": { "x": 140, "y": 212, "space": "logical" },
+  "bounds": {"x": 100, "y": 200, "w": 80, "h": 24, "space": "logical"},
+  "center": {"x": 140, "y": 212, "space": "logical"},
   "enabled": true,
-  "focused": false,
-  "checked": null,
-  "actions": ["press"],
-  "app": "TextEdit"
+  "actions": ["press"]
 }
 ```
 
-`label` is assigned per snapshot in document order and is what `click`, `type`
-and `scroll` accept. It is only meaningful until the next snapshot; the
-dispatcher rejects a label from a snapshot older than 60 seconds.
+Labels are assigned in snapshot order and can be passed to `click`, `type`, and
+`scroll`. They expire when the snapshot is older than 60 seconds or a new
+snapshot replaces it.
 
-`role` is the normalised role; `raw_role` is the platform's own name
-(`AXButton`, a UIA class name, a Java/GTK class). Match on `role`.
+## Shell and clipboard output
 
-A tree response adds:
+Shell stdout and stderr are capped at 12,000 bytes per field by default. Pass
+`max_output_bytes` to request a different bound, up to 262,144 bytes. The
+response includes the original byte count and a `*_truncated` flag when needed.
+Clipboard reads use the same policy with `text_bytes` and `text_truncated`.
+Truncation never splits a UTF-8 sequence.
 
 ```json
 {
-  "element_count": 42,
-  "nodes_walked": 1831,
-  "elapsed_ms": 287,
-  "truncated": false,
-  "truncation_reason": ""
+  "exit_code": 0,
+  "stdout": "...",
+  "stderr": "",
+  "stdout_bytes": 24000,
+  "stderr_bytes": 0,
+  "stdout_truncated": true,
+  "timed_out": false,
+  "elapsed_ms": 42
 }
 ```
 
-`truncated` means a budget was hit, so absence of an element proves nothing.
-
-## Device
-
-```json
-{
-  "id": "onscreen:9694",
-  "name": "iPhone 17 Pro Max",
-  "platform": "ios",
-  "kind": "simulator",
-  "os_version": "26.0",
-  "booted": true,
-  "screen_points": { "width": 440, "height": 956, "scale": 3.0 },
-  "transports": ["onscreen"],
-  "active_transport": "onscreen",
-  "viewport": {
-    "host_rect": { "x": 510, "y": 58, "w": 393, "h": 850 },
-    "host_px_per_device_pt": 0.893,
-    "warning": "..."
-  }
-}
-```
-
-`id` is a simctl UDID, an adb serial, or `onscreen:<window id>` for a device
-found only by its window. `screen_points` is `null` when the device model is
-not recognised — coordinates then cannot be translated precisely, and the
-response says so.
-
-`host_px_per_device_pt` below about 0.75 means the window is drawn well under
-the device's logical size and small tap targets become unreliable.
-
-## Shell result
-
-```json
-{ "exit_code": 0, "stdout": "...", "stderr": "", "timed_out": false, "elapsed_ms": 42 }
-```
-
-A non-zero `exit_code` is **not** a tool failure: the command was asked for and
-it ran. `ok` is false only when the command could not be started.
-
-## Errors
-
-```json
-{ "ok": false, "error": "...", "code": "permission_denied", "remedy": "..." }
-```
-
-`code` is one of `invalid_argument`, `permission_denied`, `unsupported`,
-`not_found`, `timeout`, `busy`, `backend_failure`, `device_error`, `io_error`,
-`internal`. `remedy` is the actionable next step and is worth surfacing to a
-user verbatim.
+A non-zero `exit_code` means the command ran and returned that code. It is not
+a tool failure; failures to start the command use the structured error shape.
 
 ---
 
-[← README](../README.md)
+[<- README](../README.md)

@@ -107,7 +107,7 @@ has no menus".
 
 | Tool | What it does |
 |---|---|
-| `windows` | List, activate, move, resize, restate or close windows. |
+| `windows` | List, activate, move, resize, change state, or close windows. |
 | `app` | List, launch, activate or quit applications. |
 | `system` | The shell-level actions every desktop has but none exposes as an API: launcher, search, switch virtual desktop, window overview, show desktop. |
 | `process` | List or terminate processes. |
