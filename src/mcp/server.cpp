@@ -112,9 +112,8 @@ std::string compact_tool_text_impl(std::string_view name, const actions::ActionR
         return collection_summary("Snapshot", value["elements"].size(), value);
     }
     if (name == "snapshot" && value.contains("tree_error")) {
-        return value.contains("screenshot")
-                   ? "Screenshot captured; accessibility tree unavailable."
-                   : "Accessibility tree unavailable.";
+        return value.contains("screenshot") ? "Screenshot captured; accessibility tree unavailable."
+                                            : "Accessibility tree unavailable.";
     }
     if (name == "elements" && value["roots"].is_array()) {
         return collection_summary("Accessibility tree", value["element_count"].as_int(), value);
@@ -145,8 +144,8 @@ std::string compact_tool_text_impl(std::string_view name, const actions::ActionR
     }
     if (name == "permissions" && value["permissions"].is_array()) {
         return std::string("Permissions: ") +
-               (value["all_granted"].as_bool(false) ? "all granted" : "action required") +
-               " (" + std::to_string(value["permissions"].size()) + " checked).";
+               (value["all_granted"].as_bool(false) ? "all granted" : "action required") + " (" +
+               std::to_string(value["permissions"].size()) + " checked).";
     }
     if (name == "system" && value["actions"].is_array()) {
         std::size_t supported = 0;
@@ -172,20 +171,23 @@ std::string compact_tool_text_impl(std::string_view name, const actions::ActionR
         return "Batch completed " + std::to_string(value["steps"].size()) + " steps.";
     }
     if (name == "shell" && (value.contains("stdout") || value.contains("stderr"))) {
-        std::string out = "Command exited with code " + std::to_string(value["exit_code"].as_int()) +
-                          "; stdout " + std::to_string(value["stdout_bytes"].as_int(
-                              value["stdout"].as_string().size())) + " bytes; stderr " +
-                          std::to_string(value["stderr_bytes"].as_int(
-                              value["stderr"].as_string().size())) + " bytes.";
+        std::string out =
+            "Command exited with code " + std::to_string(value["exit_code"].as_int()) +
+            "; stdout " +
+            std::to_string(value["stdout_bytes"].as_int(value["stdout"].as_string().size())) +
+            " bytes; stderr " +
+            std::to_string(value["stderr_bytes"].as_int(value["stderr"].as_string().size())) +
+            " bytes.";
         if (value["timed_out"].as_bool(false)) out += " Timed out.";
         if (value["stdout_truncated"].as_bool(false) || value["stderr_truncated"].as_bool(false))
             out += " Output truncated.";
         return out;
     }
     if (name == "clipboard" && value.contains("text")) {
-        std::string out = "Clipboard read: " +
-                          std::to_string(value["text_bytes"].as_int(value["text"].as_string().size())) +
-                          " bytes.";
+        std::string out =
+            "Clipboard read: " +
+            std::to_string(value["text_bytes"].as_int(value["text"].as_string().size())) +
+            " bytes.";
         if (value["has_image"].as_bool(false)) out += " Includes an image.";
         if (value["has_files"].as_bool(false) ||
             (value["files"].is_array() && value["files"].size() > 0))
@@ -273,7 +275,7 @@ json::Value Server::handle_tools_call(const json::Value& params, bool& is_error)
         json::Value out = json::Value::object();
         out.set("content", content);
         Error error{ErrorCode::PermissionDenied, "tool is disabled on this server",
-                "Enable the tool in the server configuration before calling it."};
+                    "Enable the tool in the server configuration before calling it."};
         out.set("structuredContent", error_structured(name, error));
         out.set("isError", true);
         return out;

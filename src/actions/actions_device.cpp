@@ -68,8 +68,9 @@ DeviceTransport transport_from(const Value& v) {
 
 std::size_t device_limit(const Value& args, const char* field, std::size_t fallback,
                          std::size_t ceiling) {
-    const long long raw = args.contains(field) ? args[field].as_int(static_cast<long long>(fallback))
-                                               : static_cast<long long>(fallback);
+    const long long raw = args.contains(field)
+                              ? args[field].as_int(static_cast<long long>(fallback))
+                              : static_cast<long long>(fallback);
     return static_cast<std::size_t>(std::clamp<long long>(raw, 1, static_cast<long long>(ceiling)));
 }
 

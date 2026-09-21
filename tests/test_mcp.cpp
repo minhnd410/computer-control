@@ -435,8 +435,7 @@ TEST(mcp_a_disabled_tool_reports_itself_as_a_tool_error) {
     CHECK(r["content"][0]["text"].as_string().find("disabled") != std::string::npos);
     CHECK(!r["structuredContent"]["ok"].as_bool(true));
     CHECK_EQ(r["structuredContent"]["action"].as_string(), std::string("screenshot"));
-    CHECK_EQ(r["structuredContent"]["error"]["code"].as_string(),
-             std::string("permission_denied"));
+    CHECK_EQ(r["structuredContent"]["error"]["code"].as_string(), std::string("permission_denied"));
     CHECK(!r["structuredContent"]["error"]["message"].as_string().empty());
 }
 
